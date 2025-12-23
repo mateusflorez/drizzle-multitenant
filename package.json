@@ -1,0 +1,81 @@
+{
+  "name": "drizzle-multitenant",
+  "version": "0.1.0",
+  "description": "Multi-tenancy toolkit for Drizzle ORM with schema isolation, tenant context, and parallel migrations",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./express": {
+      "import": "./dist/integrations/express.js",
+      "types": "./dist/integrations/express.d.ts"
+    },
+    "./fastify": {
+      "import": "./dist/integrations/fastify.js",
+      "types": "./dist/integrations/fastify.d.ts"
+    },
+    "./nestjs": {
+      "import": "./dist/integrations/nestjs/index.js",
+      "types": "./dist/integrations/nestjs/index.d.ts"
+    },
+    "./hono": {
+      "import": "./dist/integrations/hono.js",
+      "types": "./dist/integrations/hono.d.ts"
+    }
+  },
+  "bin": {
+    "drizzle-multitenant": "./bin/drizzle-multitenant.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "drizzle",
+    "drizzle-orm",
+    "multi-tenant",
+    "multitenancy",
+    "postgresql",
+    "schema-isolation",
+    "saas"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mateusflorez/drizzle-multitenant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mateusflorez/drizzle-multitenant/issues"
+  },
+  "homepage": "https://github.com/mateusflorez/drizzle-multitenant#readme",
+  "dependencies": {
+    "lru-cache": "^10.4.3"
+  },
+  "peerDependencies": {
+    "drizzle-orm": ">=0.29.0",
+    "pg": ">=8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "drizzle-orm": "^0.38.2",
+    "pg": "^8.13.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
