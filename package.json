@@ -1,6 +1,6 @@
 {
   "name": "drizzle-multitenant",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Multi-tenancy toolkit for Drizzle ORM with schema isolation, tenant context, and parallel migrations",
   "type": "module",
   "main": "./dist/index.js",
