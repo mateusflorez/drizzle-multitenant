@@ -340,6 +340,233 @@ describe('NestJS Integration', () => {
     });
   });
 
+  describe('Lazy Proxy providers', () => {
+    // Test the proxy behavior directly since we can't use createNestApplication
+    // without @nestjs/platform-express installed
+
+    it('should resolve TENANT_DB lazily when accessed after guard sets context', () => {
+      // Simulate the request object that NestJS would provide
+      const request: { tenantContext?: NestTenantContext; tenantId?: string } = {};
+
+      // Mock manager
+      const mockManager = {
+        getDb: vi.fn((tenantId: string) => ({ tenantId, type: 'tenant-db', select: vi.fn() })),
+        getSchemaName: vi.fn((tenantId: string) => `tenant_${tenantId}`),
+      };
+
+      // Mock options
+      const mockOptions = {
+        extractTenantId: () => undefined,
+      };
+
+      // Create the proxy like the provider does
+      const tenantDbProxy = new Proxy({} as Record<string, unknown>, {
+        get(_target, prop) {
+          let tenantId = request.tenantContext?.tenantId ?? request.tenantId;
+
+          if (!tenantId && mockOptions.extractTenantId) {
+            const extracted = mockOptions.extractTenantId();
+            if (typeof extracted === 'string') {
+              tenantId = extracted;
+            }
+          }
+
+          if (!tenantId) {
+            throw new Error(
+              '[drizzle-multitenant] No tenant context found. ' +
+              'Ensure the route has a tenant ID or use @PublicRoute() decorator.'
+            );
+          }
+
+          const db = mockManager.getDb(tenantId);
+          return (db as Record<string | symbol, unknown>)[prop];
+        },
+      });
+
+      // Initially no context - accessing should fail
+      expect(() => tenantDbProxy.select).toThrow('[drizzle-multitenant] No tenant context found');
+
+      // Simulate guard setting context (this happens in real flow)
+      request.tenantContext = { tenantId: 'tenant-123', schemaName: 'tenant_tenant-123' };
+      request.tenantId = 'tenant-123';
+
+      // Now access should work because proxy resolves lazily
+      expect(() => tenantDbProxy.select).not.toThrow();
+      expect(mockManager.getDb).toHaveBeenCalledWith('tenant-123');
+    });
+
+    it('should throw clear error when accessing TENANT_DB without tenant context', () => {
+      const request: { tenantContext?: NestTenantContext; tenantId?: string } = {};
+
+      const mockManager = {
+        getDb: vi.fn(),
+      };
+
+      const mockOptions = {
+        extractTenantId: () => undefined, // Returns undefined to simulate no tenant
+      };
+
+      const tenantDbProxy = new Proxy({} as Record<string, unknown>, {
+        get(_target, prop) {
+          let tenantId = request.tenantContext?.tenantId ?? request.tenantId;
+
+          if (!tenantId && mockOptions.extractTenantId) {
+            const extracted = mockOptions.extractTenantId();
+            if (typeof extracted === 'string') {
+              tenantId = extracted;
+            }
+          }
+
+          if (!tenantId) {
+            throw new Error(
+              '[drizzle-multitenant] No tenant context found. ' +
+              'Ensure the route has a tenant ID or use @PublicRoute() decorator.'
+            );
+          }
+
+          const db = mockManager.getDb(tenantId);
+          return (db as Record<string | symbol, unknown>)[prop];
+        },
+      });
+
+      // Accessing property should throw because no tenant context exists
+      expect(() => tenantDbProxy.select).toThrow('[drizzle-multitenant] No tenant context found');
+      expect(mockManager.getDb).not.toHaveBeenCalled();
+    });
+
+    it('should resolve TENANT_CONTEXT lazily when accessed after guard sets context', () => {
+      const request: { tenantContext?: NestTenantContext; tenantId?: string } = {};
+
+      const mockManager = {
+        getSchemaName: vi.fn((tenantId: string) => `tenant_${tenantId}`),
+      };
+
+      const mockOptions = {
+        extractTenantId: () => undefined,
+      };
+
+      const tenantContextProxy = new Proxy({} as NestTenantContext, {
+        get(_target, prop) {
+          if (request.tenantContext) {
+            return request.tenantContext[prop as keyof NestTenantContext];
+          }
+
+          let tenantId = request.tenantId;
+
+          if (!tenantId && mockOptions.extractTenantId) {
+            const extracted = mockOptions.extractTenantId();
+            if (typeof extracted === 'string') {
+              tenantId = extracted;
+            }
+          }
+
+          if (!tenantId) {
+            throw new Error(
+              '[drizzle-multitenant] No tenant context found. ' +
+              'Ensure the route has a tenant ID or use @PublicRoute() decorator.'
+            );
+          }
+
+          const schemaName = mockManager.getSchemaName(tenantId);
+          const context: NestTenantContext = { tenantId, schemaName };
+          return context[prop as keyof NestTenantContext];
+        },
+      });
+
+      // Initially no context - accessing should fail
+      expect(() => tenantContextProxy.tenantId).toThrow('[drizzle-multitenant] No tenant context found');
+
+      // Simulate guard setting context
+      request.tenantContext = { tenantId: 'tenant-456', schemaName: 'tenant_tenant-456' };
+
+      // Now access should work
+      expect(tenantContextProxy.tenantId).toBe('tenant-456');
+      expect(tenantContextProxy.schemaName).toBe('tenant_tenant-456');
+    });
+
+    it('should use extractTenantId fallback when tenantContext not set', () => {
+      const request: { tenantContext?: NestTenantContext; tenantId?: string } = {};
+
+      const mockManager = {
+        getDb: vi.fn((tenantId: string) => ({ tenantId, type: 'tenant-db' })),
+      };
+
+      const extractTenantId = vi.fn().mockReturnValue('fallback-tenant');
+      const mockOptions = { extractTenantId };
+
+      const tenantDbProxy = new Proxy({} as Record<string, unknown>, {
+        get(_target, prop) {
+          let tenantId = request.tenantContext?.tenantId ?? request.tenantId;
+
+          if (!tenantId && mockOptions.extractTenantId) {
+            const extracted = mockOptions.extractTenantId();
+            if (typeof extracted === 'string') {
+              tenantId = extracted;
+            }
+          }
+
+          if (!tenantId) {
+            throw new Error('[drizzle-multitenant] No tenant context found.');
+          }
+
+          const db = mockManager.getDb(tenantId);
+          return (db as Record<string | symbol, unknown>)[prop];
+        },
+      });
+
+      // Access the proxy - should use extractTenantId fallback
+      const result = tenantDbProxy.tenantId;
+      expect(result).toBe('fallback-tenant');
+      expect(extractTenantId).toHaveBeenCalled();
+      expect(mockManager.getDb).toHaveBeenCalledWith('fallback-tenant');
+    });
+
+    it('should support has trap in TENANT_DB proxy', () => {
+      const request: { tenantContext?: NestTenantContext; tenantId?: string } = {
+        tenantContext: { tenantId: 'tenant-123', schemaName: 'tenant_123' },
+        tenantId: 'tenant-123',
+      };
+
+      const mockManager = {
+        getDb: vi.fn(() => ({ select: vi.fn(), from: vi.fn() })),
+      };
+
+      const tenantDbProxy = new Proxy({} as Record<string, unknown>, {
+        has(_target, prop) {
+          const tenantId = request.tenantContext?.tenantId ?? request.tenantId;
+          if (!tenantId) return false;
+          const db = mockManager.getDb(tenantId);
+          return prop in db;
+        },
+      });
+
+      expect('select' in tenantDbProxy).toBe(true);
+      expect('nonexistent' in tenantDbProxy).toBe(false);
+    });
+
+    it('should support ownKeys trap in TENANT_CONTEXT proxy', () => {
+      const request: { tenantContext?: NestTenantContext; tenantId?: string } = {};
+
+      const tenantContextProxy = new Proxy({} as NestTenantContext, {
+        ownKeys() {
+          if (request.tenantContext) {
+            return Reflect.ownKeys(request.tenantContext);
+          }
+          return ['tenantId', 'schemaName'];
+        },
+      });
+
+      // Without context set, returns default keys
+      expect(Reflect.ownKeys(tenantContextProxy)).toEqual(['tenantId', 'schemaName']);
+
+      // With context set, returns actual keys
+      request.tenantContext = { tenantId: 't1', schemaName: 's1', customField: 'value' };
+      expect(Reflect.ownKeys(tenantContextProxy)).toContain('tenantId');
+      expect(Reflect.ownKeys(tenantContextProxy)).toContain('schemaName');
+      expect(Reflect.ownKeys(tenantContextProxy)).toContain('customField');
+    });
+  });
+
   describe('Different tenant ID extraction methods', () => {
     it('should extract from headers', async () => {
       const module: TestingModule = await Test.createTestingModule({
