@@ -669,17 +669,17 @@ drizzle-multitenant/
 ## Roadmap de Implementação
 
 ### v0.1.0 - Core
-- [ ] `defineConfig` e tipos
-- [ ] `createTenantManager` com pool management
-- [ ] `getDb()` e `getSharedDb()`
-- [ ] Cleanup automático de pools
-- [ ] Testes unitários
+- [x] `defineConfig` e tipos
+- [x] `createTenantManager` com pool management
+- [x] `getDb()` e `getSharedDb()`
+- [x] Cleanup automático de pools
+- [x] Testes unitários
 
 ### v0.2.0 - Context
-- [ ] `createTenantContext` com AsyncLocalStorage
-- [ ] Express middleware
-- [ ] Fastify plugin
-- [ ] Testes de integração
+- [x] `createTenantContext` com AsyncLocalStorage
+- [x] Express middleware
+- [x] Fastify plugin
+- [x] Testes de integração
 
 ### v0.3.0 - Migrations
 - [ ] CLI base (generate, migrate, status)

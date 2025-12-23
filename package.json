@@ -67,9 +67,13 @@
     "pg": ">=8.0.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
     "drizzle-orm": "^0.38.2",
+    "express": "^5.2.1",
+    "fastify": "^5.6.2",
+    "fastify-plugin": "^5.1.0",
     "pg": "^8.13.1",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
