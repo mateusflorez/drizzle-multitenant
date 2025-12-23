@@ -26,6 +26,10 @@
     "./hono": {
       "import": "./dist/integrations/hono.js",
       "types": "./dist/integrations/hono.d.ts"
+    },
+    "./migrator": {
+      "import": "./dist/migrator/index.js",
+      "types": "./dist/migrator/index.d.ts"
     }
   },
   "bin": {
@@ -60,7 +64,11 @@
   },
   "homepage": "https://github.com/mateusflorez/drizzle-multitenant#readme",
   "dependencies": {
-    "lru-cache": "^10.4.3"
+    "chalk": "^5.6.2",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "lru-cache": "^10.4.3",
+    "ora": "^8.2.0"
   },
   "peerDependencies": {
     "drizzle-orm": ">=0.29.0",

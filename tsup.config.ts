@@ -7,6 +7,8 @@ export default defineConfig({
     'src/integrations/fastify.ts',
     'src/integrations/nestjs/index.ts',
     'src/integrations/hono.ts',
+    'src/migrator/index.ts',
+    'src/cli/index.ts',
   ],
   format: ['esm'],
   dts: true,

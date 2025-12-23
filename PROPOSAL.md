@@ -682,10 +682,10 @@ drizzle-multitenant/
 - [x] Testes de integração
 
 ### v0.3.0 - Migrations
-- [ ] CLI base (generate, migrate, status)
-- [ ] Parallel migration engine
-- [ ] tenant:create e tenant:drop
-- [ ] Hooks de migration
+- [x] CLI base (generate, migrate, status)
+- [x] Parallel migration engine
+- [x] tenant:create e tenant:drop
+- [x] Hooks de migration
 
 ### v0.4.0 - Cross-Schema
 - [ ] `createCrossSchemaQuery`
