@@ -1,6 +1,6 @@
 {
   "name": "drizzle-multitenant",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Multi-tenancy toolkit for Drizzle ORM with schema isolation, tenant context, and parallel migrations",
   "type": "module",
   "main": "./dist/index.js",
@@ -57,7 +57,7 @@
     "schema-isolation",
     "saas"
   ],
-  "author": "",
+  "author": "Mateus Florez",
   "license": "MIT",
   "repository": {
     "type": "git",
