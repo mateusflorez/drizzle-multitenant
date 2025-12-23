@@ -8,6 +8,7 @@ export default defineConfig({
     'src/integrations/nestjs/index.ts',
     'src/integrations/hono.ts',
     'src/migrator/index.ts',
+    'src/cross-schema/index.ts',
     'src/cli/index.ts',
   ],
   format: ['esm'],

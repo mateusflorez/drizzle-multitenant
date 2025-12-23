@@ -3,6 +3,13 @@ export { defineConfig } from './config.js';
 export { createTenantManager } from './manager.js';
 export { createTenantContext } from './context.js';
 export { createMigrator, Migrator } from './migrator/migrator.js';
+export {
+  createCrossSchemaQuery,
+  CrossSchemaQueryBuilder,
+  withSharedLookup,
+  crossSchemaRaw,
+  buildCrossSchemaSelect,
+} from './cross-schema/cross-schema.js';
 
 // Types
 export type {
@@ -39,5 +46,19 @@ export type {
   DropTenantOptions,
   AppliedMigration,
 } from './migrator/types.js';
+
+export type {
+  SchemaSource,
+  CrossSchemaContext,
+  JoinCondition,
+  JoinType,
+  TableReference,
+  JoinDefinition,
+  SharedLookupConfig,
+  LookupResult,
+  CrossSchemaRawOptions,
+  ColumnSelection,
+  InferSelectedColumns,
+} from './cross-schema/types.js';
 
 export { DEFAULT_CONFIG } from './types.js';

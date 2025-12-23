@@ -688,9 +688,9 @@ drizzle-multitenant/
 - [x] Hooks de migration
 
 ### v0.4.0 - Cross-Schema
-- [ ] `createCrossSchemaQuery`
-- [ ] `withSharedLookup` helper
-- [ ] Type inference completo
+- [x] `createCrossSchemaQuery`
+- [x] `withSharedLookup` helper
+- [x] Type inference completo
 
 ### v0.5.0 - NestJS
 - [ ] `TenantModule.forRoot()`

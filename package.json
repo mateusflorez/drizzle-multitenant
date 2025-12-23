@@ -30,6 +30,10 @@
     "./migrator": {
       "import": "./dist/migrator/index.js",
       "types": "./dist/migrator/index.d.ts"
+    },
+    "./cross-schema": {
+      "import": "./dist/cross-schema/index.js",
+      "types": "./dist/cross-schema/index.d.ts"
     }
   },
   "bin": {
