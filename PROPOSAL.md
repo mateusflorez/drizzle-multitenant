@@ -693,10 +693,10 @@ drizzle-multitenant/
 - [x] Type inference completo
 
 ### v0.5.0 - NestJS
-- [ ] `TenantModule.forRoot()`
-- [ ] `@InjectTenantDb()` decorator
-- [ ] `@InjectTenantContext()` decorator
-- [ ] Guards e interceptors
+- [x] `TenantModule.forRoot()`
+- [x] `@InjectTenantDb()` decorator
+- [x] `@InjectTenantContext()` decorator
+- [x] Guards e interceptors
 
 ### v1.0.0 - Production Ready
 - [ ] Documentação completa
