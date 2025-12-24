@@ -1,3 +1,5 @@
+import type { TableFormat } from './table-format.js';
+
 /**
  * Migration file metadata
  */
@@ -10,6 +12,8 @@ export interface MigrationFile {
   sql: string;
   /** Timestamp extracted from filename */
   timestamp: number;
+  /** SHA-256 hash of file content (for drizzle-kit compatibility) */
+  hash: string;
 }
 
 /**
@@ -23,6 +27,8 @@ export interface TenantMigrationStatus {
   pendingMigrations: string[];
   status: 'ok' | 'behind' | 'error';
   error?: string;
+  /** Detected table format (null for new tenants without migrations table) */
+  format: TableFormat | null;
 }
 
 /**
@@ -91,6 +97,20 @@ export interface MigratorConfig {
   tenantDiscovery: () => Promise<string[]>;
   /** Migration hooks */
   hooks?: MigrationHooks;
+  /**
+   * Table format for tracking migrations
+   * - "auto": Auto-detect existing format, use defaultFormat for new tables
+   * - "name": Use filename (drizzle-multitenant native)
+   * - "hash": Use SHA-256 hash
+   * - "drizzle-kit": Exact drizzle-kit format (hash + bigint timestamp)
+   * @default "auto"
+   */
+  tableFormat?: 'auto' | TableFormat;
+  /**
+   * When using "auto" format and no table exists, which format to create
+   * @default "name"
+   */
+  defaultFormat?: TableFormat;
 }
 
 /**
@@ -130,6 +150,11 @@ export interface DropTenantOptions {
  */
 export interface AppliedMigration {
   id: number;
-  name: string;
+  /** Migration identifier (name or hash depending on format) */
+  identifier: string;
+  /** Migration name (only available in name-based format) */
+  name?: string;
+  /** Migration hash (only available in hash-based format) */
+  hash?: string;
   appliedAt: Date;
 }

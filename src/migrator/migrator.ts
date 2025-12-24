@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
+import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
 import type { Config } from '../types.js';
 import type {
@@ -13,6 +14,7 @@ import type {
   CreateTenantOptions,
   DropTenantOptions,
 } from './types.js';
+import { detectTableFormat, getFormatConfig, type DetectedFormat, type TableFormat } from './table-format.js';
 
 const DEFAULT_MIGRATIONS_TABLE = '__drizzle_migrations';
 
@@ -106,18 +108,23 @@ export class Migrator<
     try {
       await this.migratorConfig.hooks?.beforeTenant?.(tenantId);
 
-      // Ensure migrations table exists
-      await this.ensureMigrationsTable(pool, schemaName);
+      // Detect or determine the format before creating table
+      const format = await this.getOrDetectFormat(pool, schemaName);
+
+      // Ensure migrations table exists with correct format
+      await this.ensureMigrationsTable(pool, schemaName, format);
 
       // Load migrations if not provided
       const allMigrations = migrations ?? await this.loadMigrations();
 
-      // Get applied migrations
-      const applied = await this.getAppliedMigrations(pool, schemaName);
-      const appliedSet = new Set(applied.map((m) => m.name));
+      // Get applied migrations using format-aware query
+      const applied = await this.getAppliedMigrations(pool, schemaName, format);
+      const appliedSet = new Set(applied.map((m) => m.identifier));
 
-      // Filter pending migrations
-      const pending = allMigrations.filter((m) => !appliedSet.has(m.name));
+      // Filter pending migrations using format-aware comparison
+      const pending = allMigrations.filter(
+        (m) => !this.isMigrationApplied(m, appliedSet, format)
+      );
 
       if (options.dryRun) {
         return {
@@ -135,7 +142,7 @@ export class Migrator<
         options.onProgress?.(tenantId, 'migrating', migration.name);
 
         await this.migratorConfig.hooks?.beforeMigration?.(tenantId, migration.name);
-        await this.applyMigration(pool, schemaName, migration);
+        await this.applyMigration(pool, schemaName, migration, format);
         await this.migratorConfig.hooks?.afterMigration?.(
           tenantId,
           migration.name,
@@ -242,12 +249,20 @@ export class Migrator<
           pendingCount: allMigrations.length,
           pendingMigrations: allMigrations.map((m) => m.name),
           status: allMigrations.length > 0 ? 'behind' : 'ok',
+          format: null, // New tenant, no table yet
         };
       }
 
-      const applied = await this.getAppliedMigrations(pool, schemaName);
-      const appliedSet = new Set(applied.map((m) => m.name));
-      const pending = allMigrations.filter((m) => !appliedSet.has(m.name));
+      // Detect the table format
+      const format = await this.getOrDetectFormat(pool, schemaName);
+
+      const applied = await this.getAppliedMigrations(pool, schemaName, format);
+      const appliedSet = new Set(applied.map((m) => m.identifier));
+
+      // Use format-aware comparison
+      const pending = allMigrations.filter(
+        (m) => !this.isMigrationApplied(m, appliedSet, format)
+      );
 
       return {
         tenantId,
@@ -256,6 +271,7 @@ export class Migrator<
         pendingCount: pending.length,
         pendingMigrations: pending.map((m) => m.name),
         status: pending.length > 0 ? 'behind' : 'ok',
+        format: format.format,
       };
     } catch (error) {
       return {
@@ -266,6 +282,7 @@ export class Migrator<
         pendingMigrations: [],
         status: 'error',
         error: (error as Error).message,
+        format: null,
       };
     } finally {
       await pool.end();
@@ -357,11 +374,15 @@ export class Migrator<
       const match = file.match(/^(\d+)_/);
       const timestamp = match?.[1] ? parseInt(match[1], 10) : 0;
 
+      // Compute SHA-256 hash for drizzle-kit compatibility
+      const hash = createHash('sha256').update(content).digest('hex');
+
       migrations.push({
         name: basename(file, '.sql'),
         path: filePath,
         sql: content,
         timestamp,
+        hash,
       });
     }
 
@@ -381,14 +402,29 @@ export class Migrator<
   }
 
   /**
-   * Ensure migrations table exists
+   * Ensure migrations table exists with the correct format
    */
-  private async ensureMigrationsTable(pool: Pool, schemaName: string): Promise<void> {
+  private async ensureMigrationsTable(
+    pool: Pool,
+    schemaName: string,
+    format: DetectedFormat
+  ): Promise<void> {
+    const { identifier, timestamp, timestampType } = format.columns;
+
+    // Build column definitions based on format
+    const identifierCol = identifier === 'name'
+      ? 'name VARCHAR(255) NOT NULL UNIQUE'
+      : 'hash TEXT NOT NULL';
+
+    const timestampCol = timestampType === 'bigint'
+      ? `${timestamp} BIGINT NOT NULL`
+      : `${timestamp} TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`;
+
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS "${schemaName}"."${this.migrationsTable}" (
+      CREATE TABLE IF NOT EXISTS "${schemaName}"."${format.tableName}" (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL UNIQUE,
-        applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        ${identifierCol},
+        ${timestampCol}
       )
     `);
   }
@@ -408,21 +444,91 @@ export class Migrator<
   /**
    * Get applied migrations for a schema
    */
-  private async getAppliedMigrations(pool: Pool, schemaName: string): Promise<AppliedMigration[]> {
-    const result = await pool.query<{ id: number; name: string; applied_at: Date }>(
-      `SELECT id, name, applied_at FROM "${schemaName}"."${this.migrationsTable}" ORDER BY id`
+  private async getAppliedMigrations(
+    pool: Pool,
+    schemaName: string,
+    format: DetectedFormat
+  ): Promise<AppliedMigration[]> {
+    const identifierColumn = format.columns.identifier;
+    const timestampColumn = format.columns.timestamp;
+
+    const result = await pool.query<{ id: number; identifier: string; applied_at: string | number }>(
+      `SELECT id, "${identifierColumn}" as identifier, "${timestampColumn}" as applied_at
+       FROM "${schemaName}"."${format.tableName}"
+       ORDER BY id`
     );
-    return result.rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      appliedAt: row.applied_at,
-    }));
+
+    return result.rows.map((row) => {
+      // Convert timestamp based on format
+      const appliedAt = format.columns.timestampType === 'bigint'
+        ? new Date(Number(row.applied_at))
+        : new Date(row.applied_at);
+
+      return {
+        id: row.id,
+        identifier: row.identifier,
+        // Set name or hash based on format
+        ...(format.columns.identifier === 'name'
+          ? { name: row.identifier }
+          : { hash: row.identifier }),
+        appliedAt,
+      };
+    });
+  }
+
+  /**
+   * Check if a migration has been applied
+   */
+  private isMigrationApplied(
+    migration: MigrationFile,
+    appliedIdentifiers: Set<string>,
+    format: DetectedFormat
+  ): boolean {
+    if (format.columns.identifier === 'name') {
+      return appliedIdentifiers.has(migration.name);
+    }
+
+    // Hash-based: check both hash AND name for backwards compatibility
+    // This allows migration from name-based to hash-based tracking
+    return appliedIdentifiers.has(migration.hash) || appliedIdentifiers.has(migration.name);
+  }
+
+  /**
+   * Get or detect the format for a schema
+   * Returns the configured format or auto-detects from existing table
+   */
+  private async getOrDetectFormat(
+    pool: Pool,
+    schemaName: string
+  ): Promise<DetectedFormat> {
+    const configuredFormat = this.migratorConfig.tableFormat ?? 'auto';
+
+    // If not auto, return the configured format
+    if (configuredFormat !== 'auto') {
+      return getFormatConfig(configuredFormat, this.migrationsTable);
+    }
+
+    // Auto-detect from existing table
+    const detected = await detectTableFormat(pool, schemaName, this.migrationsTable);
+
+    if (detected) {
+      return detected;
+    }
+
+    // No table exists, use default format
+    const defaultFormat: TableFormat = this.migratorConfig.defaultFormat ?? 'name';
+    return getFormatConfig(defaultFormat, this.migrationsTable);
   }
 
   /**
    * Apply a migration to a schema
    */
-  private async applyMigration(pool: Pool, schemaName: string, migration: MigrationFile): Promise<void> {
+  private async applyMigration(
+    pool: Pool,
+    schemaName: string,
+    migration: MigrationFile,
+    format: DetectedFormat
+  ): Promise<void> {
     const client = await pool.connect();
 
     try {
@@ -431,10 +537,14 @@ export class Migrator<
       // Execute migration SQL
       await client.query(migration.sql);
 
-      // Record migration
+      // Record migration using format-aware insert
+      const { identifier, timestamp, timestampType } = format.columns;
+      const identifierValue = identifier === 'name' ? migration.name : migration.hash;
+      const timestampValue = timestampType === 'bigint' ? Date.now() : new Date();
+
       await client.query(
-        `INSERT INTO "${schemaName}"."${this.migrationsTable}" (name) VALUES ($1)`,
-        [migration.name]
+        `INSERT INTO "${schemaName}"."${format.tableName}" ("${identifier}", "${timestamp}") VALUES ($1, $2)`,
+        [identifierValue, timestampValue]
       );
 
       await client.query('COMMIT');
