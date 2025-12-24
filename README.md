@@ -209,11 +209,17 @@ expect(tenantDb.__tenantId).toBe('expected-tenant');
 ## CLI Commands
 
 ```bash
+# Initialize configuration (interactive wizard)
+npx drizzle-multitenant init
+
 # Generate a new migration
 npx drizzle-multitenant generate --name=add-users-table
 
-# Apply migrations to all tenants
+# Apply migrations to all tenants (with progress bar)
 npx drizzle-multitenant migrate --all --concurrency=10
+
+# Interactive tenant selection
+npx drizzle-multitenant migrate  # Shows checkbox to select tenants
 
 # Check migration status
 npx drizzle-multitenant status
@@ -226,6 +232,29 @@ npx drizzle-multitenant tenant:drop --id=old-tenant --force
 
 # Convert migration table format
 npx drizzle-multitenant convert-format --to=name --dry-run
+
+# Generate shell completions
+npx drizzle-multitenant completion bash >> ~/.bashrc
+npx drizzle-multitenant completion zsh >> ~/.zshrc
+```
+
+### Global Options
+
+```bash
+--json       # Output as JSON (for scripts/CI)
+--verbose    # Show detailed output
+--quiet      # Only show errors
+--no-color   # Disable colored output
+```
+
+### JSON Output
+
+```bash
+# Get status as JSON for scripting
+npx drizzle-multitenant status --json | jq '.tenants[] | select(.pending > 0)'
+
+# Parse migration results
+npx drizzle-multitenant migrate --all --json | jq '.summary'
 ```
 
 ### Status Output
@@ -392,6 +421,8 @@ const result = await query
 | `chalk` | Terminal styling |
 | `ora` | Loading spinners |
 | `cli-table3` | Table formatting |
+| `cli-progress` | Progress bars |
+| `@inquirer/prompts` | Interactive prompts |
 
 ## Comparison
 

@@ -68,7 +68,9 @@
   },
   "homepage": "https://github.com/mateusflorez/drizzle-multitenant#readme",
   "dependencies": {
+    "@inquirer/prompts": "^8.1.0",
     "chalk": "^5.6.2",
+    "cli-progress": "^3.12.0",
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
     "lru-cache": "^10.4.3",
@@ -82,6 +84,7 @@
     "@nestjs/common": "^10.4.20",
     "@nestjs/core": "^10.4.20",
     "@nestjs/testing": "^10.4.20",
+    "@types/cli-progress": "^3.11.6",
     "@types/express": "^5.0.6",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",

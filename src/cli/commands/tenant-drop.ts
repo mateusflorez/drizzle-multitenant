@@ -6,7 +6,6 @@ import {
   resolveMigrationsFolder,
   createSpinner,
   success,
-  error,
   warning,
   dim,
   red,
@@ -34,7 +33,7 @@ export const tenantDropCommand = new Command('tenant:drop')
 
       const migrator = createMigrator(config, {
         migrationsFolder: folder,
-        migrationsTable,
+        ...(migrationsTable && { migrationsTable }),
         tenantDiscovery: async () => [],
       });
 

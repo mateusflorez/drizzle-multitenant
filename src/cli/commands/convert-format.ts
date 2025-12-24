@@ -15,7 +15,6 @@ import {
 } from '../utils/index.js';
 import {
   detectTableFormat,
-  getFormatConfig,
   type TableFormat,
   type DetectedFormat,
 } from '../../migrator/table-format.js';

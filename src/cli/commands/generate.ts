@@ -6,7 +6,6 @@ import {
   loadConfig,
   createSpinner,
   success,
-  error,
   dim,
 } from '../utils/index.js';
 
@@ -50,7 +49,7 @@ export const generateCommand = new Command('generate')
       let maxSequence = 0;
       for (const file of sqlFiles) {
         const match = file.match(/^(\d+)_/);
-        if (match) {
+        if (match?.[1]) {
           const seq = parseInt(match[1], 10);
           if (seq > maxSequence) {
             maxSequence = seq;

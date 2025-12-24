@@ -5,7 +5,6 @@ import {
   resolveMigrationsFolder,
   createSpinner,
   success,
-  error,
   warning,
   dim,
 } from '../utils/index.js';
@@ -30,7 +29,7 @@ export const tenantCreateCommand = new Command('tenant:create')
 
       const migrator = createMigrator(config, {
         migrationsFolder: folder,
-        migrationsTable,
+        ...(migrationsTable && { migrationsTable }),
         tenantDiscovery: async () => [],
       });
 

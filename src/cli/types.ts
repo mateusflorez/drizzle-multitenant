@@ -1,0 +1,180 @@
+import type { TableFormat } from '../migrator/table-format.js';
+
+/**
+ * JSON output for the status command
+ */
+export interface StatusJsonOutput {
+  tenants: StatusTenantInfo[];
+  summary: StatusSummary;
+}
+
+export interface StatusTenantInfo {
+  id: string;
+  schema: string;
+  format: TableFormat | null;
+  applied: number;
+  pending: number;
+  status: 'ok' | 'behind' | 'error';
+  pendingMigrations: string[];
+  error?: string | undefined;
+}
+
+export interface StatusSummary {
+  total: number;
+  upToDate: number;
+  behind: number;
+  error: number;
+}
+
+/**
+ * JSON output for the migrate command
+ */
+export interface MigrateJsonOutput {
+  results: MigrateTenantResult[];
+  summary: MigrateSummary;
+}
+
+export interface MigrateTenantResult {
+  tenantId: string;
+  schema: string;
+  success: boolean;
+  appliedMigrations: string[];
+  durationMs: number;
+  format?: TableFormat | undefined;
+  error?: string | undefined;
+}
+
+export interface MigrateSummary {
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  durationMs: number;
+  averageMs?: number | undefined;
+}
+
+/**
+ * JSON output for the generate command
+ */
+export interface GenerateJsonOutput {
+  file: string;
+  name: string;
+  type: 'tenant' | 'shared';
+  path: string;
+}
+
+/**
+ * JSON output for tenant:create command
+ */
+export interface TenantCreateJsonOutput {
+  tenantId: string;
+  schema: string;
+  created: boolean;
+  migrationsApplied: number;
+  durationMs: number;
+}
+
+/**
+ * JSON output for tenant:drop command
+ */
+export interface TenantDropJsonOutput {
+  tenantId: string;
+  schema: string;
+  dropped: boolean;
+  cascade: boolean;
+}
+
+/**
+ * JSON output for convert-format command
+ */
+export interface ConvertFormatJsonOutput {
+  results: ConvertFormatResult[];
+  summary: {
+    total: number;
+    converted: number;
+    failed: number;
+    skipped: number;
+  };
+}
+
+export interface ConvertFormatResult {
+  tenantId: string;
+  schema: string;
+  fromFormat: TableFormat | null;
+  toFormat: TableFormat;
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Global CLI options that apply to all commands
+ */
+export interface GlobalOptions {
+  json?: boolean;
+  verbose?: boolean;
+  quiet?: boolean;
+  noColor?: boolean;
+}
+
+/**
+ * Options for the migrate command
+ */
+export interface MigrateOptions extends GlobalOptions {
+  config?: string;
+  all?: boolean;
+  tenant?: string;
+  tenants?: string;
+  concurrency?: string;
+  dryRun?: boolean;
+  migrationsFolder?: string;
+}
+
+/**
+ * Options for the status command
+ */
+export interface StatusOptions extends GlobalOptions {
+  config?: string;
+  migrationsFolder?: string;
+}
+
+/**
+ * Options for the generate command
+ */
+export interface GenerateOptions extends GlobalOptions {
+  name: string;
+  config?: string;
+  type?: 'tenant' | 'shared';
+  migrationsFolder?: string;
+}
+
+/**
+ * Options for tenant:create command
+ */
+export interface TenantCreateOptions extends GlobalOptions {
+  id: string;
+  config?: string;
+  migrationsFolder?: string;
+  migrate?: boolean;
+}
+
+/**
+ * Options for tenant:drop command
+ */
+export interface TenantDropOptions extends GlobalOptions {
+  id: string;
+  config?: string;
+  migrationsFolder?: string;
+  force?: boolean;
+  cascade?: boolean;
+}
+
+/**
+ * Options for convert-format command
+ */
+export interface ConvertFormatOptions extends GlobalOptions {
+  to: TableFormat;
+  config?: string;
+  tenant?: string;
+  dryRun?: boolean;
+  migrationsFolder?: string;
+}
