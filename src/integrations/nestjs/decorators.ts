@@ -7,6 +7,7 @@ import {
   REQUIRES_TENANT_KEY,
   IS_PUBLIC_KEY,
 } from './constants.js';
+import { TenantDbFactory } from './factory.js';
 import type { TenantRequest, NestTenantContext } from './types.js';
 
 /**
@@ -168,3 +169,44 @@ export const RequiresTenant = (): ClassDecorator & MethodDecorator =>
  * ```
  */
 export const PublicRoute = (): MethodDecorator => SetMetadata(IS_PUBLIC_KEY, true);
+
+/**
+ * Inject the TenantDbFactory for singleton services
+ *
+ * Use this when you need to access tenant databases in singleton services
+ * (cron jobs, event handlers, background workers, etc.) without requiring
+ * request scope.
+ *
+ * @example
+ * ```typescript
+ * // Service stays singleton - no scope change needed
+ * @Injectable()
+ * export class ReportService {
+ *   constructor(@InjectTenantDbFactory() private dbFactory: TenantDbFactory) {}
+ *
+ *   async generateReport(tenantId: string) {
+ *     const db = this.dbFactory.getDb(tenantId);
+ *     return db.select().from(reports);
+ *   }
+ * }
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Cron job usage
+ * @Injectable()
+ * export class DailyReportCron {
+ *   constructor(@InjectTenantDbFactory() private dbFactory: TenantDbFactory) {}
+ *
+ *   @Cron('0 8 * * *')
+ *   async generateDailyReports() {
+ *     const tenants = await this.getTenantIds();
+ *     for (const tenantId of tenants) {
+ *       const db = this.dbFactory.getDb(tenantId);
+ *       await this.processReports(db);
+ *     }
+ *   }
+ * }
+ * ```
+ */
+export const InjectTenantDbFactory = (): ParameterDecorator => Inject(TenantDbFactory);

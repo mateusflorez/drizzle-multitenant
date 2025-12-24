@@ -134,7 +134,7 @@ import { TenantModule, InjectTenantDb } from 'drizzle-multitenant/nestjs';
 })
 export class AppModule {}
 
-@Injectable()
+@Injectable({ scope: Scope.REQUEST })
 export class UserService {
   constructor(@InjectTenantDb() private readonly db: TenantDb) {}
 
@@ -142,6 +142,59 @@ export class UserService {
     return this.db.select().from(users);
   }
 }
+```
+
+#### Singleton Services (Cron Jobs, Event Handlers)
+
+Use `TenantDbFactory` when you need to access tenant databases from singleton services:
+
+```typescript
+import { TenantDbFactory, InjectTenantDbFactory } from 'drizzle-multitenant/nestjs';
+
+@Injectable() // Singleton - no scope needed
+export class ReportService {
+  constructor(@InjectTenantDbFactory() private dbFactory: TenantDbFactory) {}
+
+  async generateReport(tenantId: string) {
+    const db = this.dbFactory.getDb(tenantId);
+    return db.select().from(reports);
+  }
+}
+
+// Cron job example
+@Injectable()
+export class DailyReportCron {
+  constructor(@InjectTenantDbFactory() private dbFactory: TenantDbFactory) {}
+
+  @Cron('0 8 * * *')
+  async run() {
+    const tenants = await this.getTenantIds();
+    for (const tenantId of tenants) {
+      const db = this.dbFactory.getDb(tenantId);
+      await this.processReports(db);
+    }
+  }
+}
+```
+
+#### Debugging
+
+The injected `TenantDb` provides debug utilities:
+
+```typescript
+// Console output shows useful info
+console.log(tenantDb);
+// [TenantDb] tenant=123 schema=empresa_123
+
+// Access debug information
+console.log(tenantDb.__debug);
+// { tenantId: '123', schemaName: 'empresa_123', isProxy: true, poolCount: 5 }
+
+// Quick access
+console.log(tenantDb.__tenantId); // '123'
+
+// In tests
+expect(tenantDb.__tenantId).toBe('expected-tenant');
 ```
 
 ## CLI Commands
@@ -222,12 +275,23 @@ const result = await query
 
 | Decorator | Description |
 |-----------|-------------|
-| `@InjectTenantDb()` | Inject tenant database |
+| `@InjectTenantDb()` | Inject tenant database (request-scoped) |
+| `@InjectTenantDbFactory()` | Inject factory for singleton services |
 | `@InjectSharedDb()` | Inject shared database |
 | `@InjectTenantContext()` | Inject tenant context |
 | `@InjectTenantManager()` | Inject tenant manager |
 | `@RequiresTenant()` | Mark route as requiring tenant |
 | `@PublicRoute()` | Mark route as public |
+
+### TenantDbFactory Methods
+
+| Method | Description |
+|--------|-------------|
+| `getDb(tenantId)` | Get Drizzle instance for tenant |
+| `getSharedDb()` | Get shared database instance |
+| `getSchemaName(tenantId)` | Get schema name for tenant |
+| `getDebugInfo(tenantId)` | Get debug info (tenantId, schema, pool stats) |
+| `getManager()` | Get underlying TenantManager |
 
 ## Requirements
 

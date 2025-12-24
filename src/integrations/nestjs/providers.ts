@@ -38,32 +38,77 @@ export function createTenantProviders<
         manager: TenantManager<TTenantSchema, TSharedSchema>,
         options: TenantModuleOptions<TTenantSchema, TSharedSchema>
       ): TenantDb<TTenantSchema> => {
+        // Helper to resolve tenantId
+        const resolveTenantId = (): string | undefined => {
+          let tenantId = request.tenantContext?.tenantId ?? request.tenantId;
+
+          if (!tenantId && options.extractTenantId) {
+            const extracted = options.extractTenantId(request);
+            if (typeof extracted === 'string') {
+              tenantId = extracted;
+            }
+          }
+
+          return tenantId;
+        };
+
+        // Symbol for Node.js util.inspect custom formatting
+        const inspectSymbol = Symbol.for('nodejs.util.inspect.custom');
+
+        // Debug properties that are always available
+        const debugProps = ['__debug', '__tenantId', '__isProxy'] as const;
+
         // Return a proxy that resolves the db only when accessed
         return new Proxy({} as TenantDb<TTenantSchema>, {
           get(_target, prop) {
-            // Resolve tenantId at access time (after guard has executed)
-            let tenantId = request.tenantContext?.tenantId ?? request.tenantId;
+            // Debug utilities - accessible even without tenant context
+            if (prop === Symbol.toStringTag) return 'TenantDb';
 
-            // Fallback: extract from request if not set yet
-            if (!tenantId && options.extractTenantId) {
-              const extracted = options.extractTenantId(request);
-              // Handle sync extraction only (async would require different approach)
-              if (typeof extracted === 'string') {
-                tenantId = extracted;
-              }
+            // Get resolved tenant ID for debug info
+            const resolvedTenantId = resolveTenantId();
+
+            // Custom inspect for console.log / util.inspect
+            if (prop === inspectSymbol || prop === 'toString') {
+              return () => {
+                if (resolvedTenantId) {
+                  return `[TenantDb] tenant=${resolvedTenantId} schema=${manager.getSchemaName(resolvedTenantId)}`;
+                }
+                return '[TenantDb] (no tenant context)';
+              };
             }
 
-            if (!tenantId) {
+            if (prop === '__debug') {
+              return {
+                tenantId: resolvedTenantId ?? null,
+                schemaName: resolvedTenantId ? manager.getSchemaName(resolvedTenantId) : null,
+                isProxy: true,
+                poolCount: manager.getPoolCount(),
+              };
+            }
+
+            if (prop === '__tenantId') {
+              return resolvedTenantId ?? null;
+            }
+
+            if (prop === '__isProxy') {
+              return true;
+            }
+
+            // For actual db operations, require tenant context
+            if (!resolvedTenantId) {
               throw new Error(
                 '[drizzle-multitenant] No tenant context found. ' +
                 'Ensure the route has a tenant ID or use @PublicRoute() decorator.'
               );
             }
 
-            const db = manager.getDb(tenantId);
+            const db = manager.getDb(resolvedTenantId);
             return (db as unknown as Record<string | symbol, unknown>)[prop];
           },
           has(_target, prop) {
+            // Debug props are always available
+            if (debugProps.includes(prop as typeof debugProps[number])) return true;
+
             const tenantId = request.tenantContext?.tenantId ?? request.tenantId;
             if (!tenantId) return false;
             const db = manager.getDb(tenantId);
@@ -71,11 +116,19 @@ export function createTenantProviders<
           },
           ownKeys() {
             const tenantId = request.tenantContext?.tenantId ?? request.tenantId;
-            if (!tenantId) return [];
+            if (!tenantId) {
+              // Return debug props when no tenant context
+              return [...debugProps];
+            }
             const db = manager.getDb(tenantId);
-            return Reflect.ownKeys(db as object);
+            return [...new Set([...debugProps, ...Reflect.ownKeys(db as object)])];
           },
           getOwnPropertyDescriptor(_target, prop) {
+            // Debug props are always available
+            if (debugProps.includes(prop as typeof debugProps[number])) {
+              return { configurable: true, enumerable: true, writable: false };
+            }
+
             const tenantId = request.tenantContext?.tenantId ?? request.tenantId;
             if (!tenantId) return undefined;
             const db = manager.getDb(tenantId);
@@ -105,49 +158,101 @@ export function createTenantProviders<
         manager: TenantManager<TTenantSchema, TSharedSchema>,
         options: TenantModuleOptions<TTenantSchema, TSharedSchema>
       ): NestTenantContext => {
+        // Symbol for Node.js util.inspect custom formatting
+        const inspectSymbol = Symbol.for('nodejs.util.inspect.custom');
+
+        // Helper to resolve tenant context
+        const resolveContext = (): { tenantId: string; schemaName: string } | null => {
+          if (request.tenantContext) {
+            return {
+              tenantId: request.tenantContext.tenantId,
+              schemaName: request.tenantContext.schemaName,
+            };
+          }
+
+          let tenantId = request.tenantId;
+          if (!tenantId && options.extractTenantId) {
+            const extracted = options.extractTenantId(request);
+            if (typeof extracted === 'string') {
+              tenantId = extracted;
+            }
+          }
+
+          if (!tenantId) return null;
+
+          return {
+            tenantId,
+            schemaName: manager.getSchemaName(tenantId),
+          };
+        };
+
         // Return a proxy that resolves the context only when accessed
         return new Proxy({} as NestTenantContext, {
           get(_target, prop) {
-            // First check if context was already set by guard
-            if (request.tenantContext) {
-              return request.tenantContext[prop as keyof NestTenantContext];
+            // Debug utilities
+            if (prop === Symbol.toStringTag) return 'TenantContext';
+
+            const ctx = resolveContext();
+
+            // Custom inspect for console.log / util.inspect
+            if (prop === inspectSymbol || prop === 'toString') {
+              return () => {
+                if (ctx) {
+                  return `[TenantContext] tenant=${ctx.tenantId} schema=${ctx.schemaName}`;
+                }
+                return '[TenantContext] (no tenant context)';
+              };
             }
 
-            // Fallback: try to build context from tenantId
-            let tenantId = request.tenantId;
-
-            if (!tenantId && options.extractTenantId) {
-              const extracted = options.extractTenantId(request);
-              if (typeof extracted === 'string') {
-                tenantId = extracted;
-              }
+            if (prop === '__debug') {
+              return {
+                tenantId: ctx?.tenantId ?? null,
+                schemaName: ctx?.schemaName ?? null,
+                isProxy: true,
+                hasContext: !!request.tenantContext,
+              };
             }
 
-            if (!tenantId) {
+            if (prop === '__isProxy') {
+              return true;
+            }
+
+            // For actual context access, require tenant
+            if (!ctx) {
               throw new Error(
                 '[drizzle-multitenant] No tenant context found. ' +
                 'Ensure the route has a tenant ID or use @PublicRoute() decorator.'
               );
             }
 
-            // Build context lazily
-            const schemaName = manager.getSchemaName(tenantId);
-            const context: NestTenantContext = { tenantId, schemaName };
-            return context[prop as keyof NestTenantContext];
+            if (prop === 'tenantId') return ctx.tenantId;
+            if (prop === 'schemaName') return ctx.schemaName;
+
+            // For custom properties, check the original context
+            if (request.tenantContext) {
+              return request.tenantContext[prop as keyof NestTenantContext];
+            }
+
+            return undefined;
           },
           has(_target, prop) {
+            if (prop === '__debug' || prop === '__isProxy') return true;
             if (request.tenantContext) {
               return prop in request.tenantContext;
             }
             return prop === 'tenantId' || prop === 'schemaName';
           },
           ownKeys() {
+            const baseKeys = ['tenantId', 'schemaName', '__debug', '__isProxy'];
             if (request.tenantContext) {
-              return Reflect.ownKeys(request.tenantContext);
+              return [...new Set([...baseKeys, ...Reflect.ownKeys(request.tenantContext)])];
             }
-            return ['tenantId', 'schemaName'];
+            return baseKeys;
           },
           getOwnPropertyDescriptor(_target, prop) {
+            if (prop === '__debug' || prop === '__isProxy') {
+              return { configurable: true, enumerable: true, writable: false };
+            }
             if (request.tenantContext) {
               return Object.getOwnPropertyDescriptor(request.tenantContext, prop);
             }

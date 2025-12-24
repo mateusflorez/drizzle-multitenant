@@ -25,3 +25,6 @@ export const REQUIRES_TENANT_KEY = 'requires_tenant';
 
 /** Metadata key for public routes (no tenant required) */
 export const IS_PUBLIC_KEY = 'is_public_tenant';
+
+/** Token for injecting the TenantDbFactory */
+export const TENANT_DB_FACTORY = Symbol('TENANT_DB_FACTORY');

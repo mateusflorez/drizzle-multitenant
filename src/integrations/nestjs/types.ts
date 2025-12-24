@@ -91,6 +91,34 @@ export interface TenantRequest extends Request {
 }
 
 /**
+ * Debug information available on TenantDb proxy
+ */
+export interface TenantDbDebugInfo {
+  /** Current tenant ID (null if not resolved) */
+  tenantId: string | null;
+  /** Schema name for the tenant (null if not resolved) */
+  schemaName: string | null;
+  /** Whether this is a proxy object */
+  isProxy: boolean;
+  /** Number of active connection pools */
+  poolCount: number;
+}
+
+/**
+ * Extended TenantDb interface with debug utilities
+ *
+ * Available when using @InjectTenantDb() - provides debugging helpers
+ */
+export interface TenantDbWithDebug<T extends Record<string, unknown> = Record<string, unknown>> extends TenantDb<T> {
+  /** Debug information about the current tenant connection */
+  __debug: TenantDbDebugInfo;
+  /** Current tenant ID (null if not resolved) */
+  __tenantId: string | null;
+  /** Whether this is a proxy object */
+  __isProxy: true;
+}
+
+/**
  * Re-export types for convenience
  */
 export type { TenantManager, TenantDb, SharedDb, Config };

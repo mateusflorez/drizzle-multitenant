@@ -4,6 +4,7 @@ import { TENANT_MODULE_OPTIONS } from './constants.js';
 import { createTenantProviders, createAsyncProviders } from './providers.js';
 import { TenantGuard } from './guards.js';
 import { TenantContextInterceptor } from './interceptors.js';
+import { TenantDbFactory } from './factory.js';
 import type { TenantModuleOptions, TenantModuleAsyncOptions } from './types.js';
 
 /**
@@ -65,6 +66,7 @@ export class TenantModule {
       Reflector,
       TenantGuard,
       TenantContextInterceptor,
+      TenantDbFactory,
     ];
 
     // Optionally register global guard and interceptor
@@ -89,6 +91,7 @@ export class TenantModule {
         ...createTenantProviders<TTenantSchema, TSharedSchema>(),
         TenantGuard,
         TenantContextInterceptor,
+        TenantDbFactory,
       ],
     };
 
@@ -117,6 +120,7 @@ export class TenantModule {
       Reflector,
       TenantGuard,
       TenantContextInterceptor,
+      TenantDbFactory,
     ];
 
     // Global providers will be added after options are resolved
@@ -131,6 +135,7 @@ export class TenantModule {
         ...createTenantProviders<TTenantSchema, TSharedSchema>(),
         TenantGuard,
         TenantContextInterceptor,
+        TenantDbFactory,
       ],
     };
 

@@ -1,12 +1,16 @@
 // Module
 export { TenantModule, DrizzleMultitenantModule } from './tenant.module.js';
 
+// Factory
+export { TenantDbFactory } from './factory.js';
+
 // Decorators
 export {
   InjectTenantDb,
   InjectSharedDb,
   InjectTenantContext,
   InjectTenantManager,
+  InjectTenantDbFactory,
   TenantCtx,
   TenantId,
   RequiresTenant,
@@ -30,6 +34,7 @@ export {
   TENANT_CONTEXT,
   TENANT_MODULE_OPTIONS,
   TENANT_ID_EXTRACTOR,
+  TENANT_DB_FACTORY,
   REQUIRES_TENANT_KEY,
   IS_PUBLIC_KEY,
 } from './constants.js';
@@ -43,6 +48,8 @@ export type {
   TenantModuleOptionsFactory,
   TenantModuleAsyncOptions,
   TenantRequest,
+  TenantDbDebugInfo,
+  TenantDbWithDebug,
   TenantManager,
   TenantDb,
   SharedDb,
