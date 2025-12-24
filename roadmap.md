@@ -42,6 +42,14 @@
 - [x] 148 testes passando
 - [x] Licença MIT
 
+### v1.0.3 - NestJS DX Improvements
+- [x] `TenantDbFactory` para singleton services (cron jobs, event handlers)
+- [x] `@InjectTenantDbFactory()` decorator
+- [x] Debug utilities para proxies (`__debug`, `__tenantId`, `__isProxy`)
+- [x] `console.log(tenantDb)` mostra informações úteis
+- [x] CLI `migrationsTable` config support
+- [x] 154 testes passando
+
 ---
 
 ## Próximas Versões
@@ -792,13 +800,103 @@ const stats = await adminQuery
 
 ## Quick Wins (Podem entrar em qualquer versão)
 
-| Feature | Esforço | Versão |
-|---------|---------|--------|
-| Health check API | 2h | v1.1.0 |
-| Schema name sanitization | 1h | v1.2.0 |
-| CLI interativo básico | 4h | v1.5.0 |
-| Structured logging hook | 2h | v1.1.0 |
-| Tenant clone (schema only) | 4h | v1.5.0 |
+| Feature | Esforço | Versão | Status |
+|---------|---------|--------|--------|
+| Health check API | 2h | v1.1.0 | Pendente |
+| Schema name sanitization | 1h | v1.2.0 | Pendente |
+| CLI interativo básico | 4h | v1.5.0 | Pendente |
+| Structured logging hook | 2h | v1.1.0 | Pendente |
+| Tenant clone (schema only) | 4h | v1.5.0 | Pendente |
+| ~~CLI migrationsTable config~~ | 1h | v1.0.3 | **Concluído** |
+| ~~TenantDbFactory para singletons~~ | 2h | v1.0.3 | **Concluído** |
+| ~~Debug utilities para proxies~~ | 1h | v1.0.3 | **Concluído** |
+
+---
+
+## v1.0.4 - CLI migrationsTable Support
+
+### Problema
+
+A CLI do `drizzle-multitenant` usa a tabela `__drizzle_migrations` para tracking de migrations, mas não permite configurar um nome diferente. Isso causa incompatibilidade com projetos que já usam outra tabela de tracking (ex: `__drizzle_tenant_migrations`).
+
+### Solução
+
+Ler o campo `migrationsTable` do objeto `migrations` na config e passá-lo para o `Migrator`.
+
+### Mudanças Necessárias
+
+#### 1. Atualizar `loadConfig` em `src/cli/utils.ts`
+
+```typescript
+export async function loadConfig(configPath?: string) {
+  // ... código existente ...
+
+  return {
+    config: exported,
+    migrationsFolder: exported.migrations?.tenantFolder,
+    tenantDiscovery: exported.migrations?.tenantDiscovery,
+    migrationsTable: exported.migrations?.migrationsTable, // NOVO
+  };
+}
+```
+
+#### 2. Atualizar comandos em `src/cli/commands/`
+
+Passar `migrationsTable` para o `createMigrator`:
+
+```typescript
+// migrate.ts, status.ts, tenant-create.ts, tenant-drop.ts
+const { config, migrationsFolder, tenantDiscovery, migrationsTable } = await loadConfig(options.config);
+
+const migrator = createMigrator(config, {
+  migrationsFolder: folder,
+  tenantDiscovery: discoveryFn,
+  migrationsTable, // NOVO - passa undefined se não configurado (usa default)
+});
+```
+
+#### 3. Atualizar tipos
+
+```typescript
+// types.ts ou onde apropriado
+interface MigrationsConfig {
+  tenantFolder: string;
+  tenantDiscovery: () => Promise<string[]>;
+  migrationsTable?: string; // NOVO
+}
+```
+
+### Exemplo de Uso
+
+```typescript
+// tenant.config.ts
+export default {
+  ...config,
+  migrations: {
+    tenantFolder: "./drizzle/tenant",
+    tenantDiscovery: discoverTenants,
+    migrationsTable: "__drizzle_tenant_migrations", // NOVO - usa tabela customizada
+  },
+};
+```
+
+### Compatibilidade
+
+- **Backward compatible**: Se não configurado, usa `__drizzle_migrations` (comportamento atual)
+- **Migration path**: Projetos existentes podem:
+  1. Configurar a tabela antiga na config
+  2. Ou renomear a tabela no banco para o novo padrão
+
+### Checklist
+
+- [x] Atualizar `loadConfig` para extrair `migrationsTable`
+- [x] Atualizar `migrate` command
+- [x] Atualizar `status` command
+- [x] Atualizar `tenant:create` command
+- [x] Atualizar `tenant:drop` command
+- [x] Adicionar teste unitário
+- [x] Atualizar README com exemplo
+- [x] ~~Publicar v1.0.4~~ (incluído em v1.0.3)
 
 ---
 

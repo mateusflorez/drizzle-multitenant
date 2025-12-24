@@ -20,7 +20,7 @@ export const statusCommand = new Command('status')
     try {
       spinner.start();
 
-      const { config, migrationsFolder, tenantDiscovery } = await loadConfig(options.config);
+      const { config, migrationsFolder, migrationsTable, tenantDiscovery } = await loadConfig(options.config);
 
       if (!tenantDiscovery) {
         throw new Error(
@@ -36,6 +36,7 @@ export const statusCommand = new Command('status')
 
       const migrator = createMigrator(config, {
         migrationsFolder: folder,
+        migrationsTable,
         tenantDiscovery,
       });
 

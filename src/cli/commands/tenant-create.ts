@@ -22,7 +22,7 @@ export const tenantCreateCommand = new Command('tenant:create')
     try {
       spinner.start();
 
-      const { config, migrationsFolder } = await loadConfig(options.config);
+      const { config, migrationsFolder, migrationsTable } = await loadConfig(options.config);
 
       const folder = options.migrationsFolder
         ? resolveMigrationsFolder(options.migrationsFolder)
@@ -30,6 +30,7 @@ export const tenantCreateCommand = new Command('tenant:create')
 
       const migrator = createMigrator(config, {
         migrationsFolder: folder,
+        migrationsTable,
         tenantDiscovery: async () => [],
       });
 

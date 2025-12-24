@@ -26,7 +26,7 @@ export const tenantDropCommand = new Command('tenant:drop')
     try {
       spinner.start();
 
-      const { config, migrationsFolder } = await loadConfig(options.config);
+      const { config, migrationsFolder, migrationsTable } = await loadConfig(options.config);
 
       const folder = options.migrationsFolder
         ? resolveMigrationsFolder(options.migrationsFolder)
@@ -34,6 +34,7 @@ export const tenantDropCommand = new Command('tenant:drop')
 
       const migrator = createMigrator(config, {
         migrationsFolder: folder,
+        migrationsTable,
         tenantDiscovery: async () => [],
       });
 

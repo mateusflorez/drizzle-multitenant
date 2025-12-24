@@ -15,6 +15,7 @@ const CONFIG_FILE_NAMES = [
 export interface LoadedConfig {
   config: Config<Record<string, unknown>, Record<string, unknown>>;
   migrationsFolder?: string;
+  migrationsTable?: string;
   tenantDiscovery?: () => Promise<string[]>;
 }
 
@@ -69,6 +70,7 @@ export async function loadConfig(configPath?: string): Promise<LoadedConfig> {
   return {
     config: exported,
     migrationsFolder: exported.migrations?.tenantFolder,
+    migrationsTable: exported.migrations?.migrationsTable,
     tenantDiscovery: exported.migrations?.tenantDiscovery,
   };
 }

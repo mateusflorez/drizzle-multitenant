@@ -28,7 +28,7 @@ export const migrateCommand = new Command('migrate')
     try {
       spinner.start();
 
-      const { config, migrationsFolder, tenantDiscovery } = await loadConfig(options.config);
+      const { config, migrationsFolder, migrationsTable, tenantDiscovery } = await loadConfig(options.config);
 
       const folder = options.migrationsFolder
         ? resolveMigrationsFolder(options.migrationsFolder)
@@ -63,6 +63,7 @@ export const migrateCommand = new Command('migrate')
 
       const migrator = createMigrator(config, {
         migrationsFolder: folder,
+        migrationsTable,
         tenantDiscovery: discoveryFn,
       });
 

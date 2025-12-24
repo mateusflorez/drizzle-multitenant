@@ -56,6 +56,15 @@ export default defineConfig({
     tenant: tenantSchema,
     shared: sharedSchema,
   },
+  // Optional: CLI migrations config
+  migrations: {
+    tenantFolder: './drizzle/tenant',
+    migrationsTable: '__drizzle_migrations', // Custom table name
+    tenantDiscovery: async () => {
+      // Return list of tenant IDs for migrations
+      return ['tenant-1', 'tenant-2'];
+    },
+  },
 });
 ```
 
