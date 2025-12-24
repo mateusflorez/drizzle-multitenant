@@ -363,4 +363,129 @@ describe('Migrator', () => {
       expect(results.failed).toBeGreaterThan(0);
     });
   });
+
+  describe('table format configuration', () => {
+    it('should accept tableFormat option', () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+        tableFormat: 'drizzle-kit',
+      });
+
+      expect(migrator).toBeInstanceOf(Migrator);
+    });
+
+    it('should accept defaultFormat option', () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+        tableFormat: 'auto',
+        defaultFormat: 'hash',
+      });
+
+      expect(migrator).toBeInstanceOf(Migrator);
+    });
+
+    it('should accept all tableFormat values', () => {
+      const formats = ['auto', 'name', 'hash', 'drizzle-kit'] as const;
+
+      for (const format of formats) {
+        const migrator = createMigrator(mockConfig, {
+          migrationsFolder: migrationsDir,
+          tenantDiscovery: async () => [],
+          tableFormat: format,
+        });
+
+        expect(migrator).toBeInstanceOf(Migrator);
+      }
+    });
+  });
+
+  describe('migration hash computation', () => {
+    it('should compute hash for migration files', async () => {
+      await writeFile(
+        join(migrationsDir, '0001_create_users.sql'),
+        'CREATE TABLE users (id SERIAL PRIMARY KEY);'
+      );
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => [],
+      });
+
+      const migrations = await (migrator as unknown as {
+        loadMigrations: () => Promise<{ name: string; hash: string }[]>;
+      }).loadMigrations();
+
+      expect(migrations).toHaveLength(1);
+      expect(migrations[0].hash).toBeDefined();
+      expect(migrations[0].hash).toHaveLength(64); // SHA-256 hex string
+    });
+
+    it('should produce different hashes for different content', async () => {
+      await writeFile(join(migrationsDir, '0001_a.sql'), 'CREATE TABLE a;');
+      await writeFile(join(migrationsDir, '0002_b.sql'), 'CREATE TABLE b;');
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => [],
+      });
+
+      const migrations = await (migrator as unknown as {
+        loadMigrations: () => Promise<{ name: string; hash: string }[]>;
+      }).loadMigrations();
+
+      expect(migrations[0].hash).not.toBe(migrations[1].hash);
+    });
+
+    it('should produce same hash for same content', async () => {
+      const content = 'CREATE TABLE test (id SERIAL);';
+
+      await writeFile(join(migrationsDir, '0001_test.sql'), content);
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => [],
+      });
+
+      const migrations1 = await (migrator as unknown as {
+        loadMigrations: () => Promise<{ name: string; hash: string }[]>;
+      }).loadMigrations();
+
+      // Recreate with same content
+      await writeFile(join(migrationsDir, '0001_test.sql'), content);
+
+      const migrations2 = await (migrator as unknown as {
+        loadMigrations: () => Promise<{ name: string; hash: string }[]>;
+      }).loadMigrations();
+
+      expect(migrations1[0].hash).toBe(migrations2[0].hash);
+    });
+  });
+
+  describe('getTenantStatus with format', () => {
+    it('should return null format when no migrations table exists', async () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const status = await migrator.getTenantStatus('tenant-1');
+
+      // With mock returning rowCount: 0, table doesn't exist
+      expect(status.format).toBeNull();
+    });
+
+    it('should include format field in status response', async () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const status = await migrator.getTenantStatus('tenant-1');
+
+      // format should be defined (either null or a format string)
+      expect('format' in status).toBe(true);
+    });
+  });
 });

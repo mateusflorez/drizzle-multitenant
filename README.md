@@ -223,18 +223,91 @@ npx drizzle-multitenant tenant:create --id=new-tenant
 
 # Drop a tenant schema
 npx drizzle-multitenant tenant:drop --id=old-tenant --force
+
+# Convert migration table format
+npx drizzle-multitenant convert-format --to=name --dry-run
 ```
 
 ### Status Output
 
 ```
-┌─────────────────────┬─────────┬─────────┬──────────┐
-│ Tenant              │ Applied │ Pending │ Status   │
-├─────────────────────┼─────────┼─────────┼──────────┤
-│ tenant_abc123       │ 15      │ 0       │ OK       │
-│ tenant_def456       │ 15      │ 0       │ OK       │
-│ tenant_ghi789       │ 14      │ 1       │ Behind   │
-└─────────────────────┴─────────┴─────────┴──────────┘
+┌──────────────────┬──────────────┬────────────┬─────────┬─────────┬──────────┐
+│ Tenant           │ Schema       │ Format     │ Applied │ Pending │ Status   │
+├──────────────────┼──────────────┼────────────┼─────────┼─────────┼──────────┤
+│ abc-123          │ tenant_abc   │ drizzle-kit│ 45      │ 3       │ Behind   │
+│ def-456          │ tenant_def   │ name       │ 48      │ 0       │ OK       │
+│ ghi-789          │ tenant_ghi   │ (new)      │ 0       │ 48      │ Behind   │
+└──────────────────┴──────────────┴────────────┴─────────┴─────────┴──────────┘
+```
+
+## Migration Table Formats
+
+`drizzle-multitenant` supports multiple migration table formats for compatibility with existing databases:
+
+### Supported Formats
+
+| Format | Identifier | Timestamp | Compatible With |
+|--------|------------|-----------|-----------------|
+| `name` | Filename | `applied_at` (timestamp) | drizzle-multitenant native |
+| `hash` | SHA-256 | `created_at` (timestamp) | Custom scripts |
+| `drizzle-kit` | SHA-256 | `created_at` (bigint) | drizzle-kit migrate |
+
+### Configuration
+
+```typescript
+// tenant.config.ts
+export default defineConfig({
+  // ...
+  migrations: {
+    tenantFolder: './drizzle/tenant',
+    tenantDiscovery: async () => getTenantIds(),
+
+    /**
+     * Table format for tracking migrations
+     * - "auto": Auto-detect existing format (default)
+     * - "name": Filename-based (drizzle-multitenant native)
+     * - "hash": SHA-256 hash
+     * - "drizzle-kit": Exact drizzle-kit format
+     */
+    tableFormat: 'auto',
+
+    /**
+     * Format to use when creating new tables (only for "auto" mode)
+     * @default "name"
+     */
+    defaultFormat: 'name',
+  },
+});
+```
+
+### Migrating from drizzle-kit
+
+If you have existing databases with migrations applied via `drizzle-kit migrate`, the CLI will automatically detect the format:
+
+```bash
+# Check current format for all tenants
+npx drizzle-multitenant status
+
+# Apply new migrations (works with any format)
+npx drizzle-multitenant migrate --all
+```
+
+### Converting Between Formats
+
+Use the `convert-format` command to standardize all tenants to a single format:
+
+```bash
+# Preview conversion (dry-run)
+npx drizzle-multitenant convert-format --to=name --dry-run
+
+# Convert all tenants to name format
+npx drizzle-multitenant convert-format --to=name
+
+# Convert specific tenant
+npx drizzle-multitenant convert-format --to=name --tenant=abc-123
+
+# Convert to drizzle-kit format (for compatibility)
+npx drizzle-multitenant convert-format --to=drizzle-kit
 ```
 
 ## Cross-Schema Queries
