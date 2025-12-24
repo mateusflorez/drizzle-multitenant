@@ -41,6 +41,8 @@ export interface TenantMigrationResult {
   appliedMigrations: string[];
   error?: string;
   durationMs: number;
+  /** Table format used for this migration */
+  format?: TableFormat;
 }
 
 /**

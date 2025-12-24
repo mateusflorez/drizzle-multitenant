@@ -133,6 +133,7 @@ export class Migrator<
           success: true,
           appliedMigrations: pending.map((m) => m.name),
           durationMs: Date.now() - startTime,
+          format: format.format,
         };
       }
 
@@ -158,6 +159,7 @@ export class Migrator<
         success: true,
         appliedMigrations,
         durationMs: Date.now() - startTime,
+        format: format.format,
       };
 
       await this.migratorConfig.hooks?.afterTenant?.(tenantId, result);

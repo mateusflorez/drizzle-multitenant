@@ -1,6 +1,25 @@
 import Table from 'cli-table3';
 import chalk from 'chalk';
 import type { TenantMigrationStatus } from '../../migrator/types.js';
+import type { TableFormat } from '../../migrator/table-format.js';
+
+/**
+ * Get format display text
+ */
+function getFormatText(format: TableFormat | null): string {
+  if (format === null) {
+    return chalk.dim('(new)');
+  }
+
+  switch (format) {
+    case 'name':
+      return chalk.blue('name');
+    case 'hash':
+      return chalk.magenta('hash');
+    case 'drizzle-kit':
+      return chalk.cyan('drizzle-kit');
+  }
+}
 
 /**
  * Create a status table for tenant migrations
@@ -10,6 +29,7 @@ export function createStatusTable(statuses: TenantMigrationStatus[]): string {
     head: [
       chalk.cyan('Tenant'),
       chalk.cyan('Schema'),
+      chalk.cyan('Format'),
       chalk.cyan('Applied'),
       chalk.cyan('Pending'),
       chalk.cyan('Status'),
@@ -27,6 +47,7 @@ export function createStatusTable(statuses: TenantMigrationStatus[]): string {
     table.push([
       status.tenantId,
       chalk.dim(status.schemaName),
+      getFormatText(status.format),
       chalk.green(status.appliedCount.toString()),
       status.pendingCount > 0
         ? chalk.yellow(status.pendingCount.toString())
@@ -49,11 +70,13 @@ export function createResultsTable(
     appliedMigrations: string[];
     error?: string;
     durationMs: number;
+    format?: TableFormat;
   }>
 ): string {
   const table = new Table({
     head: [
       chalk.cyan('Tenant'),
+      chalk.cyan('Format'),
       chalk.cyan('Migrations'),
       chalk.cyan('Duration'),
       chalk.cyan('Status'),
@@ -72,6 +95,7 @@ export function createResultsTable(
 
     table.push([
       result.tenantId,
+      getFormatText(result.format ?? null),
       result.appliedMigrations.length.toString(),
       `${result.durationMs}ms`,
       `${statusIcon} ${statusText}`,

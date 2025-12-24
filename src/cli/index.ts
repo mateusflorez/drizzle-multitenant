@@ -6,6 +6,7 @@ import {
   generateCommand,
   tenantCreateCommand,
   tenantDropCommand,
+  convertFormatCommand,
 } from './commands/index.js';
 
 const program = new Command();
@@ -21,6 +22,7 @@ program.addCommand(statusCommand);
 program.addCommand(generateCommand);
 program.addCommand(tenantCreateCommand);
 program.addCommand(tenantDropCommand);
+program.addCommand(convertFormatCommand);
 
 // Parse arguments
 program.parse();
