@@ -20,6 +20,9 @@ node_modules/
 # Documentation source
 docs/
 PROPOSAL.md
+proposals/
+roadmap.md
+.claude/
 
 # IDE
 .vscode/
