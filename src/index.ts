@@ -46,6 +46,9 @@ export type {
   MetricsResult,
   TenantPoolMetrics,
   ConnectionMetrics,
+  LintRuleConfig,
+  LintRulesConfig,
+  LintConfig,
 } from './types.js';
 
 export type { RetryResult } from './retry.js';

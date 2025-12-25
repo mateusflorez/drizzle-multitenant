@@ -38,6 +38,10 @@
     "./scaffold": {
       "import": "./dist/scaffold/index.js",
       "types": "./dist/scaffold/index.d.ts"
+    },
+    "./lint": {
+      "import": "./dist/lint/index.js",
+      "types": "./dist/lint/index.d.ts"
     }
   },
   "bin": {
@@ -77,6 +81,7 @@
     "cli-progress": "^3.12.0",
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
+    "glob": "^13.0.0",
     "lru-cache": "^10.4.3",
     "ora": "^8.2.0"
   },

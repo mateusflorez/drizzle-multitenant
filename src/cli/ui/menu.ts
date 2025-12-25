@@ -11,6 +11,7 @@ import {
   TenantsScreen,
   SeedingScreen,
   GenerateScreen,
+  LintScreen,
 } from './screens/index.js';
 import type { MenuContext, ScreenAction } from './types.js';
 import { loadConfig, resolveMigrationsFolder } from '../utils/index.js';
@@ -114,6 +115,8 @@ export class MainMenu {
     }
 
     choices.push(
+      new Separator(),
+      { name: 'Schema Lint', value: 'lint' },
       { name: 'Refresh', value: 'refresh' },
       new Separator(),
       { name: 'Exit', value: 'exit' },
@@ -187,6 +190,12 @@ export class MainMenu {
       case 'generate-shared': {
         const screen = new GenerateScreen(this.ctx, this.renderer);
         await screen.showShared();
+        return { type: 'back' };
+      }
+
+      case 'lint': {
+        const screen = new LintScreen(this.ctx, this.renderer);
+        await screen.show();
         return { type: 'back' };
       }
 

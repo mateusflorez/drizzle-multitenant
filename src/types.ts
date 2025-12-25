@@ -124,6 +124,49 @@ export interface DebugContext {
 }
 
 /**
+ * Lint rule configuration - can be severity only or [severity, options]
+ */
+export type LintRuleConfig<TOptions = Record<string, unknown>> =
+  | 'off'
+  | 'warn'
+  | 'error'
+  | ['off' | 'warn' | 'error', TOptions];
+
+/**
+ * All available lint rules for configuration
+ */
+export interface LintRulesConfig {
+  /** Enforce table naming convention (snake_case by default) */
+  'table-naming'?: LintRuleConfig<{ style?: 'snake_case' | 'camelCase' | 'PascalCase' | 'kebab-case'; exceptions?: string[] }>;
+  /** Enforce column naming convention (snake_case by default) */
+  'column-naming'?: LintRuleConfig<{ style?: 'snake_case' | 'camelCase' | 'PascalCase' | 'kebab-case'; exceptions?: string[] }>;
+  /** Require every table to have a primary key */
+  'require-primary-key'?: LintRuleConfig;
+  /** Prefer UUID over serial/integer for primary keys */
+  'prefer-uuid-pk'?: LintRuleConfig;
+  /** Require created_at/updated_at columns */
+  'require-timestamps'?: LintRuleConfig<{ columns?: string[] }>;
+  /** Require indexes on foreign key columns */
+  'index-foreign-keys'?: LintRuleConfig;
+  /** Warn about CASCADE DELETE on foreign keys */
+  'no-cascade-delete'?: LintRuleConfig;
+  /** Require soft delete column on tables */
+  'require-soft-delete'?: LintRuleConfig<{ column?: string }>;
+}
+
+/**
+ * Lint configuration
+ */
+export interface LintConfig {
+  /** Lint rules configuration */
+  rules?: LintRulesConfig;
+  /** Glob patterns for schema files to include */
+  include?: string[];
+  /** Glob patterns for schema files to exclude */
+  exclude?: string[];
+}
+
+/**
  * Main configuration interface
  */
 export interface Config<
@@ -142,6 +185,8 @@ export interface Config<
   metrics?: MetricsConfig;
   /** Debug configuration */
   debug?: DebugConfig;
+  /** Schema linting configuration */
+  lint?: LintConfig;
 }
 
 /**

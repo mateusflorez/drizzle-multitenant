@@ -22,3 +22,4 @@ export {
   scaffoldSeedCommand,
   scaffoldMigrationCommand,
 } from './scaffold.js';
+export { lintCommand } from './lint.js';

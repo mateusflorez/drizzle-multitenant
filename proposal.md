@@ -31,9 +31,9 @@ Expandir o `drizzle-multitenant` para incluir gerenciamento completo de **shared
 
 1. ~~**Shared schema migrations** - Não há suporte para migrar o schema `public`~~ ✅ **Implementado**
 2. ~~**Shared schema seeding** - Seeds só funcionam para tenants~~ ✅ **Implementado**
-3. **Project scaffolding** - Sem geração de boilerplate
-4. **Schema validation** - Sem linting ou validação de convenções
-5. **Init wizard limitado** - Não gera estrutura de pastas completa
+3. ~~**Project scaffolding** - Sem geração de boilerplate~~ ✅ **Implementado**
+4. ~~**Schema validation** - Sem linting ou validação de convenções~~ ✅ **Implementado**
+5. ~~**Init wizard limitado** - Não gera estrutura de pastas completa~~ ✅ **Implementado**
 6. **Sem templates de projeto** - Usuário começa do zero
 
 ---
@@ -261,7 +261,7 @@ export const ordersIndexes = {
 
 ---
 
-### 5. Schema Validation & Linting
+### 5. Schema Validation & Linting ✅ IMPLEMENTADO
 
 **Problema:** Inconsistências entre schemas de tenants e convenções não seguidas.
 
@@ -405,7 +405,7 @@ npx drizzle-multitenant import --from=./other-project/schemas.json
 
 ### Phase 2: Developer Experience (v1.4.0)
 - [x] Scaffold command ✅
-- [ ] Schema linting
+- [x] Schema linting ✅
 - [x] Interactive UI enhancements (shared migrations) ✅
 
 ### Phase 3: Advanced Features (v1.5.0)
@@ -437,7 +437,7 @@ src/
 │   │   ├── seed-shared.ts           # ✅ IMPLEMENTADO
 │   │   ├── seed-all.ts              # ✅ IMPLEMENTADO
 │   │   ├── scaffold.ts              # ✅ IMPLEMENTADO
-│   │   ├── lint.ts                  # PENDENTE
+│   │   ├── lint.ts                  # ✅ IMPLEMENTADO
 │   │   ├── doctor.ts                # ✅ IMPLEMENTADO
 │   │   └── export.ts                # PENDENTE
 │   ├── init/                        # ✅ IMPLEMENTADO (enhanced wizard)
@@ -452,14 +452,18 @@ src/
 │   └── ui/
 │       └── screens/
 │           ├── seeding-screen.ts    # ✅ ATUALIZADO (shared seeding support)
-│           └── lint-screen.ts       # PENDENTE
-├── lint/                            # PENDENTE
+│           └── lint-screen.ts       # ✅ IMPLEMENTADO
+├── lint/                            # ✅ IMPLEMENTADO
 │   ├── index.ts
-│   ├── rules/
-│   │   ├── naming.ts
-│   │   ├── conventions.ts
-│   │   └── security.ts
-│   └── reporter.ts
+│   ├── linter.ts                    # ✅ SchemaLinter class
+│   ├── parser.ts                    # ✅ Schema parser
+│   ├── reporter.ts                  # ✅ Console/JSON/GitHub reporters
+│   ├── types.ts                     # ✅ Lint types
+│   └── rules/
+│       ├── index.ts
+│       ├── naming.ts                # ✅ table-naming, column-naming
+│       ├── conventions.ts           # ✅ require-primary-key, prefer-uuid-pk, etc.
+│       └── security.ts              # ✅ no-cascade-delete, require-soft-delete
 └── scaffold/                        # ✅ IMPLEMENTADO
     ├── index.ts
     ├── types.ts
@@ -518,6 +522,32 @@ src/
 ---
 
 ## Changelog
+
+### 2025-12-25 (Schema Linting)
+- ✅ Implementado módulo `lint` em `src/lint/`
+- ✅ Implementado `SchemaLinter` classe principal para validação de schemas
+- ✅ Implementadas 8 regras de linting configuráveis:
+  - `table-naming`: Valida convenção de nomes de tabelas (snake_case por padrão)
+  - `column-naming`: Valida convenção de nomes de colunas (snake_case por padrão)
+  - `require-primary-key`: Exige primary key em todas as tabelas
+  - `prefer-uuid-pk`: Recomenda UUID ao invés de serial para PKs
+  - `require-timestamps`: Exige colunas created_at/updated_at
+  - `index-foreign-keys`: Exige índices em foreign keys
+  - `no-cascade-delete`: Avisa sobre CASCADE DELETE
+  - `require-soft-delete`: Exige coluna de soft delete
+- ✅ Implementado parser de schemas Drizzle para extração de metadados
+- ✅ Implementados 3 formatos de reporter: console, json, github (CI)
+- ✅ Implementado comando CLI `lint` com opções:
+  - `--tenant-schema`: Diretório de schemas tenant
+  - `--shared-schema`: Diretório de schemas shared
+  - `--format`: Formato de output (console/json/github)
+  - `--rule`: Habilitar regras específicas
+  - `--ignore-rule`: Desabilitar regras específicas
+- ✅ Implementado `LintScreen` para UI interativa
+- ✅ Adicionada configuração `lint` no `defineConfig` do types.ts
+- ✅ Exportação via `drizzle-multitenant/lint` no package.json
+- ✅ Adicionados 77 testes unitários
+- ✅ Build passando sem erros
 
 ### 2025-12-25 (Scaffold Command)
 - ✅ Implementado módulo `scaffold` em `src/scaffold/`

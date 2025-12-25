@@ -24,6 +24,7 @@ import {
   scaffoldSchemaCommand,
   scaffoldSeedCommand,
   scaffoldMigrationCommand,
+  lintCommand,
 } from './commands/index.js';
 import { initOutputContext } from './utils/output.js';
 import { mainMenu } from './ui/menu.js';
@@ -77,6 +78,8 @@ Examples:
   $ drizzle-multitenant scaffold:schema orders --type=tenant
   $ drizzle-multitenant scaffold:seed initial --type=tenant
   $ drizzle-multitenant scaffold:migration add-orders --type=tenant
+  $ drizzle-multitenant lint --tenant-schema=./src/db/schema/tenant
+  $ drizzle-multitenant lint --format=github
   $ drizzle-multitenant status --json | jq '.summary'
 
 Documentation:
@@ -106,6 +109,7 @@ program.addCommand(scaffoldCommand);
 program.addCommand(scaffoldSchemaCommand);
 program.addCommand(scaffoldSeedCommand);
 program.addCommand(scaffoldMigrationCommand);
+program.addCommand(lintCommand);
 
 // Default action: launch interactive mode when no command is specified
 program.action(async () => {

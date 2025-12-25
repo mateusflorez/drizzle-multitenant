@@ -327,3 +327,46 @@ export interface DoctorRecommendation {
 export interface DoctorOptions extends GlobalOptions {
   config?: string;
 }
+
+/**
+ * Options for the lint command
+ */
+export interface LintOptions extends GlobalOptions {
+  config?: string;
+  tenantSchema?: string;
+  sharedSchema?: string;
+  format?: 'console' | 'json' | 'github';
+  fix?: boolean;
+  rule?: string[];
+  ignoreRule?: string[];
+}
+
+/**
+ * JSON output for the lint command
+ */
+export interface LintJsonOutput {
+  passed: boolean;
+  summary: {
+    totalFiles: number;
+    totalTables: number;
+    totalColumns: number;
+    errors: number;
+    warnings: number;
+  };
+  files: Array<{
+    filePath: string;
+    issues: Array<{
+      rule: string;
+      severity: 'warn' | 'error';
+      message: string;
+      filePath: string;
+      table?: string;
+      column?: string;
+      line?: number;
+      suggestion?: string;
+    }>;
+    tables: number;
+    columns: number;
+  }>;
+  durationMs: number;
+}
