@@ -26,6 +26,8 @@ import {
   scaffoldMigrationCommand,
   lintCommand,
   metricsCommand,
+  exportCommand,
+  importCommand,
 } from './commands/index.js';
 import { initOutputContext } from './utils/output.js';
 import { mainMenu } from './ui/menu.js';
@@ -83,6 +85,9 @@ Examples:
   $ drizzle-multitenant lint --format=github
   $ drizzle-multitenant metrics --health
   $ drizzle-multitenant metrics --prometheus
+  $ drizzle-multitenant export --format=typescript -o schemas.d.ts
+  $ drizzle-multitenant export --format=mermaid -o erd.md
+  $ drizzle-multitenant import schemas.json -o ./src/db/schema
   $ drizzle-multitenant status --json | jq '.summary'
 
 Documentation:
@@ -114,6 +119,8 @@ program.addCommand(scaffoldSeedCommand);
 program.addCommand(scaffoldMigrationCommand);
 program.addCommand(lintCommand);
 program.addCommand(metricsCommand);
+program.addCommand(exportCommand);
+program.addCommand(importCommand);
 
 // Default action: launch interactive mode when no command is specified
 program.action(async () => {

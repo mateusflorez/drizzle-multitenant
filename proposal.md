@@ -34,7 +34,7 @@ Expandir o `drizzle-multitenant` para incluir gerenciamento completo de **shared
 3. ~~**Project scaffolding** - Sem geração de boilerplate~~ ✅ **Implementado**
 4. ~~**Schema validation** - Sem linting ou validação de convenções~~ ✅ **Implementado**
 5. ~~**Init wizard limitado** - Não gera estrutura de pastas completa~~ ✅ **Implementado**
-6. **Sem templates de projeto** - Usuário começa do zero
+6. ~~**Export/Import schemas** - Compartilhar schemas entre projetos~~ ✅ **Implementado**
 
 ---
 
@@ -373,7 +373,7 @@ npx drizzle-multitenant doctor
 
 ---
 
-### 8. Export/Import Schemas
+### 8. Export/Import Schemas ✅ IMPLEMENTADO
 
 **Problema:** Compartilhar definições de schema entre projetos é difícil.
 
@@ -390,7 +390,7 @@ npx drizzle-multitenant export --format=typescript > schemas.d.ts
 npx drizzle-multitenant export --format=mermaid > erd.md
 
 # Importar schema de outro projeto
-npx drizzle-multitenant import --from=./other-project/schemas.json
+npx drizzle-multitenant import schemas.json -o ./src/db/schema
 ```
 
 ---
@@ -409,7 +409,7 @@ npx drizzle-multitenant import --from=./other-project/schemas.json
 - [x] Interactive UI enhancements (shared migrations) ✅
 
 ### Phase 3: Advanced Features (v1.5.0)
-- [ ] Export/Import schemas
+- [x] Export/Import schemas ✅
 - [ ] CI/CD templates
 - [x] Metrics dashboard integration ✅
 
@@ -473,6 +473,16 @@ src/
 │       ├── naming.ts                # ✅ table-naming, column-naming
 │       ├── conventions.ts           # ✅ require-primary-key, prefer-uuid-pk, etc.
 │       └── security.ts              # ✅ no-cascade-delete, require-soft-delete
+├── export/                          # ✅ IMPLEMENTADO
+│   ├── index.ts
+│   ├── types.ts                     # ✅ Export/Import types
+│   ├── schema-exporter.ts           # ✅ Main exporter class
+│   ├── json-schema-exporter.ts      # ✅ JSON Schema format
+│   ├── typescript-exporter.ts       # ✅ TypeScript types format
+│   ├── mermaid-exporter.ts          # ✅ Mermaid ERD format
+│   ├── importer.ts                  # ✅ Schema importer
+│   ├── export.test.ts               # ✅ 53 tests
+│   └── importer.test.ts             # ✅ 34 tests
 └── scaffold/                        # ✅ IMPLEMENTADO
     ├── index.ts
     ├── types.ts
@@ -531,6 +541,41 @@ src/
 ---
 
 ## Changelog
+
+### 2025-12-25 (Export/Import Schemas)
+- ✅ Implementado módulo `export` em `src/export/`
+- ✅ Implementado `SchemaExporter` para exportar schemas Drizzle
+- ✅ Implementado `JsonSchemaExporter` para formato JSON Schema
+  - Mapeamento completo de tipos PostgreSQL para JSON Schema
+  - Suporte a primary keys, foreign keys, nullable, defaults
+  - Geração de definitions com relacionamentos
+- ✅ Implementado `TypeScriptExporter` para tipos TypeScript
+  - Geração de interfaces para select/insert
+  - Suporte a Zod schemas opcionais
+  - JSDoc comments para colunas especiais
+- ✅ Implementado `MermaidExporter` para diagramas ERD
+  - Suporte a temas (default, dark, forest, neutral)
+  - Exibição de relacionamentos entre tabelas
+  - Marcação de PK/FK e indexes opcionais
+- ✅ Implementado `SchemaImporter` para importar schemas de JSON
+  - Geração de arquivos Drizzle schema completos
+  - Suporte a Zod e TypeScript types opcionais
+  - Geração de barrel files (index.ts)
+  - Modo dry-run para preview
+- ✅ Implementado comando CLI `export` com opções:
+  - `--format`: json, typescript, mermaid
+  - `--output`: Arquivo de saída
+  - `--include-metadata`: Metadados no JSON
+  - `--include-zod`: Schemas Zod no TypeScript
+  - `--json-schema`: Formato JSON Schema
+- ✅ Implementado comando CLI `import` com opções:
+  - `--output`: Diretório de saída
+  - `--overwrite`: Sobrescrever arquivos existentes
+  - `--include-zod`: Incluir Zod schemas
+  - `--dry-run`: Preview sem escrita
+- ✅ Exportação via `drizzle-multitenant/export` no package.json
+- ✅ Adicionados 87 testes unitários
+- ✅ Todos os 998 testes passando
 
 ### 2025-12-25 (Metrics Dashboard Integration)
 - ✅ Implementado módulo `metrics` em `src/metrics/`

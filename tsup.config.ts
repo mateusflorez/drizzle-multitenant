@@ -12,6 +12,7 @@ export default defineConfig({
     'src/scaffold/index.ts',
     'src/lint/index.ts',
     'src/metrics/index.ts',
+    'src/export/index.ts',
     'src/cli/index.ts',
   ],
   format: ['esm'],

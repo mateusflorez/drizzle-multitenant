@@ -24,3 +24,5 @@ export {
 } from './scaffold.js';
 export { lintCommand } from './lint.js';
 export { metricsCommand } from './metrics.js';
+export { exportCommand } from './export.js';
+export { importCommand } from './import.js';

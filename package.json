@@ -46,6 +46,10 @@
     "./metrics": {
       "import": "./dist/metrics/index.js",
       "types": "./dist/metrics/index.d.ts"
+    },
+    "./export": {
+      "import": "./dist/export/index.js",
+      "types": "./dist/export/index.d.ts"
     }
   },
   "bin": {

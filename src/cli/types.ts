@@ -370,3 +370,35 @@ export interface LintJsonOutput {
   }>;
   durationMs: number;
 }
+
+/**
+ * Options for the export command
+ */
+export interface ExportCommandOptions extends GlobalOptions {
+  config?: string;
+  tenantSchema?: string;
+  sharedSchema?: string;
+  format?: 'json' | 'typescript' | 'mermaid';
+  output?: string;
+  projectName?: string;
+  includeMetadata?: boolean;
+  includeZod?: boolean;
+  insertTypes?: boolean;
+  selectTypes?: boolean;
+  mermaidTheme?: string;
+  includeIndexes?: boolean;
+  jsonSchema?: boolean;
+}
+
+/**
+ * Options for the import command
+ */
+export interface ImportCommandOptions extends GlobalOptions {
+  output?: string;
+  overwrite?: boolean;
+  tenant?: boolean;
+  shared?: boolean;
+  includeZod?: boolean;
+  types?: boolean;
+  dryRun?: boolean;
+}
