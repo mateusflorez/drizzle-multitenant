@@ -2,7 +2,7 @@ import { select, Separator } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import { createMigrator } from '../../migrator/migrator.js';
-import type { TenantMigrationStatus } from '../../migrator/types.js';
+import type { TenantMigrationStatus, SharedMigrationStatus } from '../../migrator/types.js';
 import { showBanner } from './banner.js';
 import { MenuRenderer } from './base/menu-renderer.js';
 import {
@@ -23,6 +23,8 @@ export class MainMenu {
   private readonly renderer: MenuRenderer;
   private ctx: MenuContext | null = null;
   private statuses: TenantMigrationStatus[] = [];
+  private sharedStatus: SharedMigrationStatus | null = null;
+  private hasSharedMigrations = false;
 
   constructor(
     private readonly configPath?: string
@@ -75,28 +77,51 @@ export class MainMenu {
   private async showMainMenu(): Promise<ScreenAction> {
     const summary = this.renderer.getStatusSummary(this.statuses);
 
+    // Build choices dynamically based on shared migrations availability
+    const choices: Array<{ name: string; value: string } | Separator> = [
+      {
+        name: `Migration Status ${chalk.gray(`(${chalk.green(summary.upToDate)} ok, ${chalk.yellow(summary.behind)} pending)`)}`,
+        value: 'status',
+      },
+      {
+        name: `Migrate Tenants ${summary.totalPending > 0 ? chalk.yellow(`(${summary.totalPending} pending)`) : chalk.dim('(all up to date)')}`,
+        value: 'migrate',
+      },
+    ];
+
+    // Add shared migrations options if available
+    if (this.hasSharedMigrations && this.sharedStatus) {
+      const sharedPending = this.sharedStatus.pendingCount;
+      choices.push({
+        name: `Migrate Shared Schema ${sharedPending > 0 ? chalk.yellow(`(${sharedPending} pending)`) : chalk.dim('(up to date)')}`,
+        value: 'migrate-shared',
+      });
+    }
+
+    choices.push(
+      { name: 'Seed Tenants', value: 'seed' },
+      new Separator(),
+      { name: 'Create Tenant', value: 'create' },
+      { name: 'Clone Tenant', value: 'clone' },
+      { name: 'Drop Tenant', value: 'drop' },
+      new Separator(),
+      { name: 'Generate Migration', value: 'generate' },
+    );
+
+    // Add shared generate option if configured
+    if (this.hasSharedMigrations) {
+      choices.push({ name: 'Generate Shared Migration', value: 'generate-shared' });
+    }
+
+    choices.push(
+      { name: 'Refresh', value: 'refresh' },
+      new Separator(),
+      { name: 'Exit', value: 'exit' },
+    );
+
     const choice = await select({
       message: 'drizzle-multitenant - Main Menu',
-      choices: [
-        {
-          name: `Migration Status ${chalk.gray(`(${chalk.green(summary.upToDate)} ok, ${chalk.yellow(summary.behind)} pending)`)}`,
-          value: 'status',
-        },
-        {
-          name: `Migrate Tenants ${summary.totalPending > 0 ? chalk.yellow(`(${summary.totalPending} pending)`) : chalk.dim('(all up to date)')}`,
-          value: 'migrate',
-        },
-        { name: 'Seed Tenants', value: 'seed' },
-        new Separator(),
-        { name: 'Create Tenant', value: 'create' },
-        { name: 'Clone Tenant', value: 'clone' },
-        { name: 'Drop Tenant', value: 'drop' },
-        new Separator(),
-        { name: 'Generate Migration', value: 'generate' },
-        { name: 'Refresh', value: 'refresh' },
-        new Separator(),
-        { name: 'Exit', value: 'exit' },
-      ],
+      choices,
     });
 
     return this.handleChoice(choice);
@@ -153,6 +178,18 @@ export class MainMenu {
         return { type: 'back' };
       }
 
+      case 'migrate-shared': {
+        await this.migrateShared();
+        await this.refreshStatuses();
+        return { type: 'refresh' };
+      }
+
+      case 'generate-shared': {
+        const screen = new GenerateScreen(this.ctx, this.renderer);
+        await screen.showShared();
+        return { type: 'back' };
+      }
+
       case 'refresh':
         await this.refreshStatuses();
         return { type: 'refresh' };
@@ -163,6 +200,61 @@ export class MainMenu {
       default:
         return { type: 'back' };
     }
+  }
+
+  /**
+   * Migrate shared schema
+   */
+  private async migrateShared(): Promise<void> {
+    if (!this.ctx || !this.sharedStatus) return;
+
+    if (this.sharedStatus.pendingCount === 0) {
+      console.log(chalk.green('\n  Shared schema is already up to date.\n'));
+      await this.renderer.pressEnterToContinue();
+      return;
+    }
+
+    console.log(chalk.cyan(`\n  Pending shared migrations: ${this.sharedStatus.pendingCount}\n`));
+    for (const name of this.sharedStatus.pendingMigrations) {
+      console.log(chalk.dim(`    - ${name}`));
+    }
+    console.log('');
+
+    const spinner = ora('Migrating shared schema...').start();
+
+    try {
+      const migrator = createMigrator(this.ctx.config, {
+        migrationsFolder: this.ctx.migrationsFolder,
+        sharedMigrationsFolder: this.ctx.sharedMigrationsFolder,
+        ...(this.ctx.migrationsTable && { migrationsTable: this.ctx.migrationsTable }),
+        tenantDiscovery: this.ctx.tenantDiscovery,
+      });
+
+      const result = await migrator.migrateShared({
+        onProgress: (status, name) => {
+          if (status === 'migrating' && name) {
+            spinner.text = `Applying: ${name}`;
+          }
+        },
+      });
+
+      if (result.success) {
+        spinner.succeed(`Applied ${result.appliedMigrations.length} migration(s)`);
+        console.log('');
+        for (const name of result.appliedMigrations) {
+          console.log(chalk.green(`  ✓ ${name}`));
+        }
+      } else {
+        spinner.fail('Migration failed');
+        console.log(chalk.red(`\n  Error: ${result.error}`));
+      }
+    } catch (error) {
+      spinner.fail('Migration failed');
+      console.log(chalk.red(`\n  ${(error as Error).message}`));
+    }
+
+    console.log('');
+    await this.renderer.pressEnterToContinue();
   }
 
   /**
@@ -211,7 +303,7 @@ export class MainMenu {
     const spinner = ora('Loading configuration...').start();
 
     try {
-      const { config, migrationsFolder, migrationsTable, tenantDiscovery } =
+      const { config, migrationsFolder, migrationsTable, tenantDiscovery, sharedMigrationsFolder } =
         await loadConfig(this.configPath);
 
       if (!tenantDiscovery) {
@@ -224,6 +316,19 @@ export class MainMenu {
       }
 
       const folder = resolveMigrationsFolder(migrationsFolder);
+
+      // Try to resolve shared migrations folder if configured
+      let sharedFolder: string | undefined;
+      if (sharedMigrationsFolder) {
+        try {
+          sharedFolder = resolveMigrationsFolder(sharedMigrationsFolder);
+          this.hasSharedMigrations = true;
+        } catch {
+          // Shared folder doesn't exist yet, that's fine
+          this.hasSharedMigrations = false;
+        }
+      }
+
       spinner.succeed('Configuration loaded');
 
       return {
@@ -231,6 +336,7 @@ export class MainMenu {
         migrationsFolder: folder,
         migrationsTable,
         tenantDiscovery,
+        sharedMigrationsFolder: sharedFolder,
       };
     } catch (error) {
       spinner.fail('Failed to load configuration');
@@ -245,21 +351,30 @@ export class MainMenu {
   private async refreshStatuses(): Promise<void> {
     if (!this.ctx) return;
 
-    const spinner = ora('Fetching tenant status...').start();
+    const spinner = ora('Fetching status...').start();
 
     try {
       const migrator = createMigrator(this.ctx.config, {
         migrationsFolder: this.ctx.migrationsFolder,
+        sharedMigrationsFolder: this.ctx.sharedMigrationsFolder,
         ...(this.ctx.migrationsTable && { migrationsTable: this.ctx.migrationsTable }),
         tenantDiscovery: this.ctx.tenantDiscovery,
       });
 
+      // Fetch tenant statuses
       this.statuses = await migrator.getStatus();
+
+      // Fetch shared status if configured
+      if (this.hasSharedMigrations) {
+        this.sharedStatus = await migrator.getSharedStatus();
+      }
+
       spinner.stop();
     } catch (error) {
-      spinner.fail('Failed to fetch tenant status');
+      spinner.fail('Failed to fetch status');
       console.log(chalk.red(`\n  ${(error as Error).message}`));
       this.statuses = [];
+      this.sharedStatus = null;
     }
   }
 }

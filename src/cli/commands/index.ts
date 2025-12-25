@@ -1,8 +1,10 @@
 export { migrateCommand } from './migrate.js';
+export { migrateSharedCommand } from './migrate-shared.js';
 export { statusCommand } from './status.js';
 export { syncCommand } from './sync.js';
 export { diffCommand } from './diff.js';
 export { generateCommand } from './generate.js';
+export { generateSharedCommand } from './generate-shared.js';
 export { tenantCreateCommand } from './tenant-create.js';
 export { tenantDropCommand } from './tenant-drop.js';
 export { tenantCloneCommand } from './tenant-clone.js';

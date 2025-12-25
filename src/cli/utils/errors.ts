@@ -125,6 +125,23 @@ npx drizzle-multitenant generate --name initial`
       `Migration failed for tenant '${tenantId}': ${reason}`,
       'Check the migration SQL for syntax errors or constraint violations'
     ),
+
+  sharedMigrationsNotConfigured: () =>
+    new CLIError(
+      'Shared migrations folder not configured',
+      'Set sharedFolder in your config migrations settings or use --migrations-folder option',
+      `migrations: {
+  folder: './drizzle/tenant-migrations',
+  sharedFolder: './drizzle/shared-migrations',
+  tenantDiscovery: async () => [...],
+}`
+    ),
+
+  /**
+   * Create a custom CLI error
+   */
+  create: (message: string, suggestion?: string, example?: string, docs?: string) =>
+    new CLIError(message, suggestion, example, docs),
 };
 
 /**

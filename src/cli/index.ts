@@ -3,10 +3,12 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import {
   migrateCommand,
+  migrateSharedCommand,
   statusCommand,
   syncCommand,
   diffCommand,
   generateCommand,
+  generateSharedCommand,
   tenantCreateCommand,
   tenantDropCommand,
   tenantCloneCommand,
@@ -73,10 +75,12 @@ Documentation:
 
 // Register commands
 program.addCommand(migrateCommand);
+program.addCommand(migrateSharedCommand);
 program.addCommand(statusCommand);
 program.addCommand(syncCommand);
 program.addCommand(diffCommand);
 program.addCommand(generateCommand);
+program.addCommand(generateSharedCommand);
 program.addCommand(tenantCreateCommand);
 program.addCommand(tenantDropCommand);
 program.addCommand(tenantCloneCommand);

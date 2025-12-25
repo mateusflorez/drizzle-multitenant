@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { Pool } from 'pg';
 import type { Config } from '../types.js';
 import type {
@@ -26,6 +27,10 @@ import type {
   TenantSchemaDrift,
   SchemaDriftStatus,
   SchemaDriftOptions,
+  // Shared schema migration types
+  SharedMigrationStatus,
+  SharedMigrationResult,
+  SharedMigrateOptions,
 } from './types.js';
 import { detectTableFormat, getFormatConfig, type DetectedFormat, type TableFormat } from './table-format.js';
 import { SchemaManager } from './schema-manager.js';
@@ -35,9 +40,11 @@ import { SyncManager } from './sync/sync-manager.js';
 import { MigrationExecutor } from './executor/migration-executor.js';
 import { BatchExecutor } from './executor/batch-executor.js';
 import { Cloner } from './clone/cloner.js';
+import { SharedMigrationExecutor } from './shared/shared-migration-executor.js';
 import type { CloneTenantOptions, CloneTenantResult } from './clone/types.js';
 
 const DEFAULT_MIGRATIONS_TABLE = '__drizzle_migrations';
+const DEFAULT_SHARED_MIGRATIONS_TABLE = '__drizzle_shared_migrations';
 
 /**
  * Parallel migration engine for multi-tenant applications
@@ -54,6 +61,7 @@ export class Migrator<
   private readonly migrationExecutor: MigrationExecutor;
   private readonly batchExecutor: BatchExecutor;
   private readonly cloner: Cloner;
+  private readonly sharedMigrationExecutor: SharedMigrationExecutor | null;
 
   constructor(
     tenantConfig: Config<TTenantSchema, TSharedSchema>,
@@ -120,6 +128,40 @@ export class Migrator<
         createSchema: this.schemaManager.createSchema.bind(this.schemaManager),
       }
     );
+
+    // Initialize SharedMigrationExecutor (if shared migrations folder is configured)
+    if (migratorConfig.sharedMigrationsFolder && existsSync(migratorConfig.sharedMigrationsFolder)) {
+      const sharedMigrationsTable = migratorConfig.sharedMigrationsTable ?? DEFAULT_SHARED_MIGRATIONS_TABLE;
+
+      const sharedHooks = migratorConfig.sharedHooks;
+      const executorConfig: import('./shared/types.js').SharedMigrationExecutorConfig = {
+        schemaName: 'public',
+        migrationsTable: sharedMigrationsTable,
+      };
+
+      if (sharedHooks?.beforeMigration || sharedHooks?.afterApply) {
+        executorConfig.hooks = {};
+        if (sharedHooks.beforeMigration) {
+          executorConfig.hooks.beforeMigration = sharedHooks.beforeMigration;
+        }
+        if (sharedHooks.afterApply) {
+          executorConfig.hooks.afterMigration = sharedHooks.afterApply;
+        }
+      }
+
+      this.sharedMigrationExecutor = new SharedMigrationExecutor(
+        executorConfig,
+        {
+          createPool: this.schemaManager.createRootPool.bind(this.schemaManager),
+          migrationsTableExists: this.schemaManager.migrationsTableExists.bind(this.schemaManager),
+          ensureMigrationsTable: this.schemaManager.ensureMigrationsTable.bind(this.schemaManager),
+          getOrDetectFormat: this.getOrDetectSharedFormat.bind(this),
+          loadMigrations: this.loadSharedMigrations.bind(this),
+        }
+      );
+    } else {
+      this.sharedMigrationExecutor = null;
+    }
   }
 
   /**
@@ -424,6 +466,181 @@ export class Migrator<
     // No table exists, use default format
     const defaultFormat: TableFormat = this.migratorConfig.defaultFormat ?? 'name';
     return getFormatConfig(defaultFormat, this.migrationsTable);
+  }
+
+  /**
+   * Load shared migration files from the shared migrations folder
+   */
+  private async loadSharedMigrations(): Promise<MigrationFile[]> {
+    if (!this.migratorConfig.sharedMigrationsFolder) {
+      return [];
+    }
+
+    const files = await readdir(this.migratorConfig.sharedMigrationsFolder);
+    const migrations: MigrationFile[] = [];
+
+    for (const file of files) {
+      if (!file.endsWith('.sql')) continue;
+
+      const filePath = join(this.migratorConfig.sharedMigrationsFolder, file);
+      const content = await readFile(filePath, 'utf-8');
+
+      const match = file.match(/^(\d+)_/);
+      const timestamp = match?.[1] ? parseInt(match[1], 10) : 0;
+
+      const hash = createHash('sha256').update(content).digest('hex');
+
+      migrations.push({
+        name: basename(file, '.sql'),
+        path: filePath,
+        sql: content,
+        timestamp,
+        hash,
+      });
+    }
+
+    return migrations.sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  /**
+   * Get or detect the format for the shared schema
+   */
+  private async getOrDetectSharedFormat(
+    pool: Pool,
+    schemaName: string
+  ): Promise<DetectedFormat> {
+    const sharedMigrationsTable = this.migratorConfig.sharedMigrationsTable ?? DEFAULT_SHARED_MIGRATIONS_TABLE;
+    const configuredFormat = this.migratorConfig.tableFormat ?? 'auto';
+
+    if (configuredFormat !== 'auto') {
+      return getFormatConfig(configuredFormat, sharedMigrationsTable);
+    }
+
+    const detected = await detectTableFormat(pool, schemaName, sharedMigrationsTable);
+
+    if (detected) {
+      return detected;
+    }
+
+    const defaultFormat: TableFormat = this.migratorConfig.defaultFormat ?? 'name';
+    return getFormatConfig(defaultFormat, sharedMigrationsTable);
+  }
+
+  // ============================================================================
+  // Shared Schema Migration Methods
+  // ============================================================================
+
+  /**
+   * Check if shared schema migrations are configured
+   *
+   * @returns True if sharedMigrationsFolder is configured and exists
+   */
+  hasSharedMigrations(): boolean {
+    return this.sharedMigrationExecutor !== null;
+  }
+
+  /**
+   * Migrate the shared schema (public)
+   *
+   * Applies pending migrations to the shared/public schema.
+   * Must have sharedMigrationsFolder configured.
+   *
+   * @example
+   * ```typescript
+   * if (migrator.hasSharedMigrations()) {
+   *   const result = await migrator.migrateShared();
+   *   console.log(`Applied ${result.appliedMigrations.length} shared migrations`);
+   * }
+   * ```
+   */
+  async migrateShared(options: SharedMigrateOptions = {}): Promise<SharedMigrationResult> {
+    if (!this.sharedMigrationExecutor) {
+      return {
+        schemaName: 'public',
+        success: false,
+        appliedMigrations: [],
+        error: 'Shared migrations not configured. Set sharedMigrationsFolder in migrator config.',
+        durationMs: 0,
+      };
+    }
+
+    return this.sharedMigrationExecutor.migrate(options);
+  }
+
+  /**
+   * Get migration status for the shared schema
+   *
+   * @returns Status with applied/pending counts
+   */
+  async getSharedStatus(): Promise<SharedMigrationStatus> {
+    if (!this.sharedMigrationExecutor) {
+      return {
+        schemaName: 'public',
+        appliedCount: 0,
+        pendingCount: 0,
+        pendingMigrations: [],
+        status: 'error',
+        error: 'Shared migrations not configured. Set sharedMigrationsFolder in migrator config.',
+        format: null,
+      };
+    }
+
+    return this.sharedMigrationExecutor.getStatus();
+  }
+
+  /**
+   * Mark shared schema migrations as applied without executing SQL
+   *
+   * Useful for syncing tracking state with already-applied migrations.
+   */
+  async markSharedAsApplied(
+    options: { onProgress?: SharedMigrateOptions['onProgress'] } = {}
+  ): Promise<SharedMigrationResult> {
+    if (!this.sharedMigrationExecutor) {
+      return {
+        schemaName: 'public',
+        success: false,
+        appliedMigrations: [],
+        error: 'Shared migrations not configured. Set sharedMigrationsFolder in migrator config.',
+        durationMs: 0,
+      };
+    }
+
+    return this.sharedMigrationExecutor.markAsApplied(options);
+  }
+
+  /**
+   * Migrate shared schema first, then all tenants
+   *
+   * Convenience method for the common pattern of migrating shared tables
+   * before tenant tables.
+   *
+   * @example
+   * ```typescript
+   * const result = await migrator.migrateAllWithShared({
+   *   concurrency: 10,
+   *   onProgress: (tenantId, status) => console.log(`${tenantId}: ${status}`),
+   * });
+   *
+   * console.log(`Shared: ${result.shared.appliedMigrations.length} applied`);
+   * console.log(`Tenants: ${result.tenants.succeeded}/${result.tenants.total} succeeded`);
+   * ```
+   */
+  async migrateAllWithShared(
+    options: MigrateOptions & { sharedOptions?: SharedMigrateOptions } = {}
+  ): Promise<{ shared: SharedMigrationResult; tenants: MigrationResults }> {
+    const { sharedOptions, ...tenantOptions } = options;
+
+    // First migrate shared schema
+    const sharedResult = await this.migrateShared(sharedOptions ?? {});
+
+    // Then migrate all tenants
+    const tenantsResult = await this.migrateAll(tenantOptions);
+
+    return {
+      shared: sharedResult,
+      tenants: tenantsResult,
+    };
   }
 
   // ============================================================================
