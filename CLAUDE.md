@@ -16,10 +16,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Project Statistics
 - **Primary Language**: TypeScript (strict mode)
-- **Version**: 1.0.8
+- **Version**: 1.1.0
 - **License**: MIT
 - **Node.js**: >= 18.0.0
-- **Test Coverage**: 11 test suites, 193 tests
+- **Test Coverage**: 27 test suites, 644 tests
 
 ## Quick Start
 
@@ -79,12 +79,17 @@ npx drizzle-multitenant tenant:drop --id=old-tenant --force
 
 ## Architecture and Key Concepts
 
-### 1. Pool Manager (Core)
-**Location**: `src/pool.ts`
+### 1. Pool Manager (Facade)
+**Location**: `src/pool.ts` (facade), `src/pool/` (internals)
 
-The `PoolManager` class handles tenant database connections with LRU eviction:
+The `PoolManager` class handles tenant database connections with LRU eviction.
+Internally delegates to specialized modules:
+- `PoolCache`: LRU cache with configurable `maxPools` (default: 50)
+- `RetryHandler`: Exponential backoff with jitter for connection retries
+- `HealthChecker`: Pool health monitoring and metrics
+
+Features:
 - Creates PostgreSQL pools with schema-specific `search_path`
-- LRU cache with configurable `maxPools` (default: 50)
 - TTL-based cleanup with `poolTtlMs` (default: 1 hour)
 - Automatic eviction of least recently used pools
 
@@ -112,11 +117,18 @@ Uses Node.js `AsyncLocalStorage` for context propagation without parameter drill
 - `schemas.tenant`: Required Drizzle schema for tenant tables
 - `schemas.shared`: Optional shared schema (public)
 
-### 4. Migration Engine
-**Location**: `src/migrator/`
+### 4. Migration Engine (Facade)
+**Location**: `src/migrator/migrator.ts` (facade), `src/migrator/` (modules)
 
-Parallelized migration system with:
-- Batch processing with configurable concurrency
+The `Migrator` class orchestrates tenant migrations through specialized modules:
+- `MigrationExecutor`: Single tenant migration execution
+- `BatchExecutor`: Parallel batch processing with configurable concurrency
+- `SchemaManager`: Create/drop tenant schemas
+- `SyncManager`: Detect and resolve migration divergences
+- `DriftDetector`: Compare schemas across tenants (columns, indexes, constraints)
+- `Seeder`: Apply seed data to tenants
+
+Features:
 - Three table formats: `name`, `hash`, `drizzle-kit`
 - Auto-detect format with fallback
 - Dry-run and mark-applied modes
@@ -156,8 +168,20 @@ src/
 ├── config.ts                # Configuration validation
 ├── context.ts               # AsyncLocalStorage context
 ├── manager.ts               # TenantManager factory
-├── pool.ts                  # LRU pool manager (core)
+├── pool.ts                  # LRU pool manager (facade)
 ├── debug.ts                 # Structured debug logging
+├── retry.ts                 # Retry utilities
+├── pool/                    # Pool internals (extracted)
+│   ├── interfaces.ts        # Pool interfaces
+│   ├── cache/
+│   │   ├── index.ts
+│   │   └── pool-cache.ts    # LRU cache implementation
+│   ├── retry/
+│   │   ├── index.ts
+│   │   └── retry-handler.ts # Exponential backoff
+│   └── health/
+│       ├── index.ts
+│       └── health-checker.ts # Health check logic
 ├── integrations/
 │   ├── express.ts           # Express middleware
 │   ├── fastify.ts           # Fastify plugin
@@ -172,9 +196,31 @@ src/
 │       └── factory.ts       # TenantDbFactory
 ├── migrator/
 │   ├── index.ts             # Exports
-│   ├── migrator.ts          # Migrator class
+│   ├── migrator.ts          # Migrator class (facade)
 │   ├── types.ts             # Migration types
-│   └── table-format.ts      # Format detection/conversion
+│   ├── interfaces.ts        # Internal interfaces
+│   ├── table-format.ts      # Format detection/conversion
+│   ├── schema-manager.ts    # Schema create/drop
+│   ├── executor/            # Migration execution
+│   │   ├── index.ts
+│   │   ├── types.ts
+│   │   ├── migration-executor.ts  # Single tenant
+│   │   └── batch-executor.ts      # Parallel execution
+│   ├── sync/                # Divergence sync
+│   │   ├── index.ts
+│   │   ├── types.ts
+│   │   └── sync-manager.ts
+│   ├── drift/               # Schema drift detection
+│   │   ├── index.ts
+│   │   ├── types.ts
+│   │   ├── drift-detector.ts
+│   │   ├── column-analyzer.ts
+│   │   ├── index-analyzer.ts
+│   │   └── constraint-analyzer.ts
+│   └── seed/                # Tenant seeding
+│       ├── index.ts
+│       ├── types.ts
+│       └── seeder.ts
 ├── cross-schema/
 │   ├── index.ts             # Exports
 │   ├── cross-schema.ts      # CrossSchemaQueryBuilder
@@ -192,13 +238,28 @@ src/
     │   ├── convert-format.ts
     │   ├── init.ts
     │   └── completion.ts
-    └── utils/               # CLI utilities
-        ├── config.ts
-        ├── output.ts
-        ├── errors.ts
-        ├── progress.ts
-        ├── spinner.ts
-        └── table.ts
+    ├── utils/               # CLI utilities
+    │   ├── config.ts
+    │   ├── output.ts
+    │   ├── errors.ts
+    │   ├── progress.ts
+    │   ├── spinner.ts
+    │   └── table.ts
+    └── ui/                  # Interactive UI
+        ├── index.ts
+        ├── types.ts
+        ├── menu.ts          # Main menu (orchestrator)
+        ├── banner.ts
+        ├── base/
+        │   ├── index.ts
+        │   └── menu-renderer.ts
+        └── screens/
+            ├── index.ts
+            ├── status-screen.ts
+            ├── migrations-screen.ts
+            ├── tenants-screen.ts
+            ├── seeding-screen.ts
+            └── generate-screen.ts
 ```
 
 ## Important Patterns
@@ -435,6 +496,7 @@ chore: description           # Maintenance
 ```
 
 ### Recent Evolution
+- v1.1.0: Major refactoring - extracted modules from god components (Migrator, PoolManager, CLI Menu)
 - v1.0.8: Debug mode, warmup, sync command
 - v1.0.7: Mark-applied option
 - v1.0.5: JSON output, format detection
