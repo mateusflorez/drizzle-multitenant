@@ -34,6 +34,8 @@ import { Seeder } from './seed/seeder.js';
 import { SyncManager } from './sync/sync-manager.js';
 import { MigrationExecutor } from './executor/migration-executor.js';
 import { BatchExecutor } from './executor/batch-executor.js';
+import { Cloner } from './clone/cloner.js';
+import type { CloneTenantOptions, CloneTenantResult } from './clone/types.js';
 
 const DEFAULT_MIGRATIONS_TABLE = '__drizzle_migrations';
 
@@ -51,6 +53,7 @@ export class Migrator<
   private readonly syncManager: SyncManager;
   private readonly migrationExecutor: MigrationExecutor;
   private readonly batchExecutor: BatchExecutor;
+  private readonly cloner: Cloner;
 
   constructor(
     tenantConfig: Config<TTenantSchema, TSharedSchema>,
@@ -104,6 +107,18 @@ export class Migrator<
       { tenantDiscovery: migratorConfig.tenantDiscovery },
       this.migrationExecutor,
       this.loadMigrations.bind(this)
+    );
+
+    // Initialize Cloner (tenant cloning operations)
+    this.cloner = new Cloner(
+      { migrationsTable: this.migrationsTable },
+      {
+        createPool: this.schemaManager.createPool.bind(this.schemaManager),
+        createRootPool: this.schemaManager.createRootPool.bind(this.schemaManager),
+        schemaNameTemplate: tenantConfig.isolation.schemaNameTemplate,
+        schemaExists: this.schemaManager.schemaExists.bind(this.schemaManager),
+        createSchema: this.schemaManager.createSchema.bind(this.schemaManager),
+      }
     );
   }
 
@@ -185,6 +200,39 @@ export class Migrator<
   async tenantExists(tenantId: string): Promise<boolean> {
     // Delegate to SchemaManager
     return this.schemaManager.schemaExists(tenantId);
+  }
+
+  /**
+   * Clone a tenant to a new tenant
+   *
+   * By default, clones only schema structure. Use includeData to copy data.
+   *
+   * @example
+   * ```typescript
+   * // Schema-only clone
+   * await migrator.cloneTenant('production', 'dev');
+   *
+   * // Clone with data
+   * await migrator.cloneTenant('production', 'dev', { includeData: true });
+   *
+   * // Clone with anonymization
+   * await migrator.cloneTenant('production', 'dev', {
+   *   includeData: true,
+   *   anonymize: {
+   *     enabled: true,
+   *     rules: {
+   *       users: { email: null, phone: null },
+   *     },
+   *   },
+   * });
+   * ```
+   */
+  async cloneTenant(
+    sourceTenantId: string,
+    targetTenantId: string,
+    options: CloneTenantOptions = {}
+  ): Promise<CloneTenantResult> {
+    return this.cloner.cloneTenant(sourceTenantId, targetTenantId, options);
   }
 
   /**

@@ -507,7 +507,7 @@ await migrator.seedAll(seed, { concurrency: 10 });
 await migrator.seedTenants(['tenant-1', 'tenant-2'], seed);
 ```
 
-#### ~~Schema Drift Detection~~ (Concluído v1.5.0)
+#### ~~Schema Drift Detection~~ (Concluído v1.2.0)
 ~~Detectar divergências entre schema esperado e atual.~~
 
 ```bash

@@ -89,6 +89,7 @@ export class MainMenu {
         { name: 'Seed Tenants', value: 'seed' },
         new Separator(),
         { name: 'Create Tenant', value: 'create' },
+        { name: 'Clone Tenant', value: 'clone' },
         { name: 'Drop Tenant', value: 'drop' },
         new Separator(),
         { name: 'Generate Migration', value: 'generate' },
@@ -131,6 +132,12 @@ export class MainMenu {
       case 'create': {
         const screen = new TenantsScreen(this.ctx, this.renderer);
         const action = await screen.showCreate();
+        return this.handleScreenAction(action);
+      }
+
+      case 'clone': {
+        const screen = new TenantsScreen(this.ctx, this.renderer);
+        const action = await screen.showClone(this.statuses);
         return this.handleScreenAction(action);
       }
 

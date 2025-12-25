@@ -494,3 +494,17 @@ export interface SchemaDriftOptions {
   /** Progress callback */
   onProgress?: (tenantId: string, status: 'starting' | 'introspecting' | 'comparing' | 'completed' | 'failed') => void;
 }
+
+// ============================================================================
+// Clone Types (re-exported from clone module)
+// ============================================================================
+
+export type {
+  CloneTenantOptions,
+  CloneTenantResult,
+  CloneProgressCallback,
+  CloneProgressStatus,
+  AnonymizeOptions,
+  AnonymizeRules,
+  AnonymizeValue,
+} from './clone/types.js';

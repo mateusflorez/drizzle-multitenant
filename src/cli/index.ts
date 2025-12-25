@@ -9,6 +9,7 @@ import {
   generateCommand,
   tenantCreateCommand,
   tenantDropCommand,
+  tenantCloneCommand,
   convertFormatCommand,
   initCommand,
   completionCommand,
@@ -78,6 +79,7 @@ program.addCommand(diffCommand);
 program.addCommand(generateCommand);
 program.addCommand(tenantCreateCommand);
 program.addCommand(tenantDropCommand);
+program.addCommand(tenantCloneCommand);
 program.addCommand(convertFormatCommand);
 program.addCommand(initCommand);
 program.addCommand(completionCommand);

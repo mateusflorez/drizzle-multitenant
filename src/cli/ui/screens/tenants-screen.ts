@@ -174,4 +174,150 @@ export class TenantsScreen {
     await this.renderer.pressEnterToContinue();
     return { type: 'refresh' };
   }
+
+  /**
+   * Show clone tenant screen
+   */
+  async showClone(statuses: TenantMigrationStatus[]): Promise<ScreenAction> {
+    this.renderer.clearScreen();
+    this.renderer.showHeader('Clone Tenant');
+
+    if (statuses.length === 0) {
+      this.renderer.showStatus('No tenants found to clone from', 'warning');
+      await this.renderer.pressEnterToContinue();
+      return { type: 'back' };
+    }
+
+    // Select source tenant
+    const sourceChoices = statuses.map((s) => ({
+      name: `${s.tenantId} ${chalk.dim(`(${s.schemaName})`)}`,
+      value: s.tenantId,
+    }));
+    sourceChoices.push({ name: chalk.gray('← Cancel'), value: 'cancel' });
+
+    const sourceId = await select({
+      message: 'Select source tenant:',
+      choices: sourceChoices,
+    });
+
+    if (sourceId === 'cancel') {
+      return { type: 'back' };
+    }
+
+    // Input target tenant ID
+    const existingIds = new Set(statuses.map((s) => s.tenantId));
+    const targetId = await input({
+      message: 'New tenant ID:',
+      validate: (value) => {
+        if (!value.trim()) return 'Tenant ID cannot be empty';
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(value)) {
+          return 'Invalid tenant ID format (use alphanumeric, dashes, underscores)';
+        }
+        if (existingIds.has(value)) {
+          return 'Tenant already exists';
+        }
+        return true;
+      },
+    });
+
+    const targetSchema = this.ctx.config.isolation.schemaNameTemplate(targetId);
+    console.log(chalk.dim(`\n  Target schema: ${targetSchema}`));
+
+    // Ask about data copy
+    const includeData = await confirm({
+      message: 'Include data in clone?',
+      default: false,
+    });
+
+    let anonymize = false;
+    if (includeData) {
+      anonymize = await confirm({
+        message: 'Anonymize sensitive data?',
+        default: false,
+      });
+    }
+
+    // Confirmation
+    console.log('');
+    console.log(chalk.dim('  Clone configuration:'));
+    console.log(chalk.dim(`    Source: ${sourceId}`));
+    console.log(chalk.dim(`    Target: ${targetId} (${targetSchema})`));
+    console.log(chalk.dim(`    Data: ${includeData ? (anonymize ? 'Yes (anonymized)' : 'Yes') : 'No (schema only)'}`));
+    console.log('');
+
+    const confirmClone = await confirm({
+      message: `Clone "${sourceId}" to "${targetId}"?`,
+      default: true,
+    });
+
+    if (!confirmClone) {
+      return { type: 'back' };
+    }
+
+    const spinner = ora('Cloning tenant...').start();
+
+    try {
+      const migrator = createMigrator(this.ctx.config, {
+        migrationsFolder: this.ctx.migrationsFolder,
+        ...(this.ctx.migrationsTable && { migrationsTable: this.ctx.migrationsTable }),
+        tenantDiscovery: async () => [],
+      });
+
+      const result = await migrator.cloneTenant(sourceId, targetId, {
+        includeData,
+        anonymize: anonymize ? { enabled: true } : undefined,
+        onProgress: (status, details) => {
+          switch (status) {
+            case 'introspecting':
+              spinner.text = 'Introspecting source schema...';
+              break;
+            case 'creating_schema':
+              spinner.text = 'Creating target schema...';
+              break;
+            case 'creating_tables':
+              spinner.text = 'Creating tables...';
+              break;
+            case 'creating_indexes':
+              spinner.text = 'Creating indexes...';
+              break;
+            case 'creating_constraints':
+              spinner.text = 'Creating constraints...';
+              break;
+            case 'copying_data':
+              if (details?.table) {
+                spinner.text = `Copying: ${details.table} (${details.progress}/${details.total})...`;
+              } else {
+                spinner.text = 'Copying data...';
+              }
+              break;
+          }
+        },
+      });
+
+      if (!result.success) {
+        spinner.fail('Clone failed');
+        console.log(chalk.red(`\n  ${result.error}`));
+      } else {
+        spinner.succeed(`Tenant ${targetId} cloned successfully`);
+        console.log('');
+        console.log(chalk.green('  ✓ Tables: ') + chalk.dim(result.tables.length.toString()));
+        if (includeData && result.rowsCopied !== undefined) {
+          console.log(chalk.green('  ✓ Rows copied: ') + chalk.dim(result.rowsCopied.toLocaleString()));
+          if (anonymize) {
+            console.log(chalk.green('  ✓ Data anonymized'));
+          }
+        }
+        console.log(chalk.dim(`\n  Duration: ${result.durationMs}ms`));
+        console.log(chalk.dim('\n  Usage:'));
+        console.log(chalk.dim(`    const db = tenants.getDb('${targetId}');`));
+      }
+    } catch (error) {
+      spinner.fail('Clone failed');
+      console.log(chalk.red(`\n  ${(error as Error).message}`));
+    }
+
+    console.log('');
+    await this.renderer.pressEnterToContinue();
+    return { type: 'refresh' };
+  }
 }

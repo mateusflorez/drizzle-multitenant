@@ -13,6 +13,11 @@ export type {
   BatchExecutorConfig,
   BatchMigrateOptions,
 } from './executor/types.js';
+export { Cloner, createCloner } from './clone/index.js';
+export type {
+  ClonerConfig,
+  ClonerDependencies,
+} from './clone/types.js';
 export { detectTableFormat, getFormatConfig, DEFAULT_FORMAT, DRIZZLE_KIT_FORMAT } from './table-format.js';
 export type { TableFormat, DetectedFormat } from './table-format.js';
 export type {
@@ -52,4 +57,12 @@ export type {
   TenantSchemaDrift,
   SchemaDriftStatus,
   SchemaDriftOptions,
+  // Clone types
+  CloneTenantOptions,
+  CloneTenantResult,
+  CloneProgressCallback,
+  CloneProgressStatus,
+  AnonymizeOptions,
+  AnonymizeRules,
+  AnonymizeValue,
 } from './types.js';
