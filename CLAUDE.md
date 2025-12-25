@@ -223,6 +223,15 @@ src/
    - Add export in `package.json` exports
    - Create corresponding test file
 
+4. **Documentation**:
+   - All documentation lives in `website/` (VitePress)
+   - Guide pages: `website/guide/*.md`
+   - API reference: `website/api/reference.md`
+   - Examples: `website/examples/*.md` (full code, no separate files)
+   - Framework guides: `website/guide/frameworks/*.md`
+   - Update sidebar in `website/.vitepress/config.ts`
+   - Version is dynamic from `package.json`
+
 ### Testing Approach
 
 - **Framework**: Vitest with globals enabled

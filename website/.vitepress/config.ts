@@ -18,7 +18,6 @@ export default defineConfig({
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'API', link: '/api/reference' },
       { text: 'Examples', link: '/examples/' },
-      { text: 'Sessions', link: '/sessions/' },
       {
         text: `v${pkg.version}`,
         items: [
@@ -71,15 +70,6 @@ export default defineConfig({
             { text: 'Express', link: '/examples/express' },
             { text: 'Fastify', link: '/examples/fastify' },
             { text: 'NestJS', link: '/examples/nestjs' },
-          ]
-        }
-      ],
-      '/sessions/': [
-        {
-          text: 'Development Sessions',
-          items: [
-            { text: 'Overview', link: '/sessions/' },
-            { text: 'Connection Retry Logic', link: '/sessions/retry-logic' },
           ]
         }
       ]
