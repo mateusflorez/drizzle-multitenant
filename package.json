@@ -57,7 +57,7 @@
     "schema-isolation",
     "saas"
   ],
-  "author": "Mateus Florez",
+  "author": "Mateus Flores",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -101,5 +101,11 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ]
 }
