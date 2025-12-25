@@ -1,8 +1,9 @@
 # Proposal: Shared Schema Management Enhancement
 
 **Date:** 2025-12-25
-**Status:** Draft
+**Status:** In Progress
 **Author:** Auto-generated proposal
+**Last Updated:** 2025-12-25
 
 ---
 
@@ -28,7 +29,7 @@ Expandir o `drizzle-multitenant` para incluir gerenciamento completo de **shared
 
 ### Gaps identificados
 
-1. **Shared schema migrations** - Não há suporte para migrar o schema `public`
+1. ~~**Shared schema migrations** - Não há suporte para migrar o schema `public`~~ ✅ **Implementado**
 2. **Shared schema seeding** - Seeds só funcionam para tenants
 3. **Project scaffolding** - Sem geração de boilerplate
 4. **Schema validation** - Sem linting ou validação de convenções
@@ -39,7 +40,7 @@ Expandir o `drizzle-multitenant` para incluir gerenciamento completo de **shared
 
 ## Propostas de Features
 
-### 1. Shared Schema Migrations
+### 1. Shared Schema Migrations ✅ IMPLEMENTADO
 
 **Problema:** Tabelas compartilhadas (plans, roles, permissions) não têm suporte de migração.
 
@@ -345,7 +346,7 @@ npx drizzle-multitenant doctor
 
 ---
 
-### 7. Interactive UI Enhancements
+### 7. Interactive UI Enhancements ✅ IMPLEMENTADO (Parcial)
 
 **Problema:** A UI interativa não cobre shared schemas.
 
@@ -397,7 +398,7 @@ npx drizzle-multitenant import --from=./other-project/schemas.json
 ## Priorização
 
 ### Phase 1: Core Shared Schema (v1.3.0)
-- [ ] Shared schema migrations
+- [x] Shared schema migrations ✅
 - [ ] Shared schema seeding
 - [ ] Enhanced init wizard
 - [ ] Doctor command
@@ -405,7 +406,7 @@ npx drizzle-multitenant import --from=./other-project/schemas.json
 ### Phase 2: Developer Experience (v1.4.0)
 - [ ] Scaffold command
 - [ ] Schema linting
-- [ ] Interactive UI enhancements
+- [x] Interactive UI enhancements (shared migrations) ✅
 
 ### Phase 3: Advanced Features (v1.5.0)
 - [ ] Export/Import schemas
@@ -420,32 +421,32 @@ npx drizzle-multitenant import --from=./other-project/schemas.json
 
 ```
 src/
-├── shared/                          # NOVO módulo
-│   ├── index.ts
-│   ├── migrator.ts                  # SharedMigrator
-│   ├── seeder.ts                    # SharedSeeder
-│   └── types.ts
+├── migrator/
+│   └── shared/                      # ✅ IMPLEMENTADO
+│       ├── index.ts
+│       ├── shared-migration-executor.ts
+│       └── types.ts
 ├── cli/
 │   ├── commands/
-│   │   ├── generate-shared.ts       # NOVO
-│   │   ├── migrate-shared.ts        # NOVO
-│   │   ├── seed-shared.ts           # NOVO
-│   │   ├── scaffold.ts              # NOVO
-│   │   ├── lint.ts                  # NOVO
-│   │   ├── doctor.ts                # NOVO
-│   │   └── export.ts                # NOVO
+│   │   ├── generate-shared.ts       # ✅ IMPLEMENTADO
+│   │   ├── migrate-shared.ts        # ✅ IMPLEMENTADO
+│   │   ├── seed-shared.ts           # PENDENTE
+│   │   ├── scaffold.ts              # PENDENTE
+│   │   ├── lint.ts                  # PENDENTE
+│   │   ├── doctor.ts                # PENDENTE
+│   │   └── export.ts                # PENDENTE
 │   └── ui/
 │       └── screens/
-│           ├── shared-migrations-screen.ts  # NOVO
-│           └── lint-screen.ts               # NOVO
-├── lint/                            # NOVO módulo
+│           ├── (integrado no menu principal)  # ✅ IMPLEMENTADO
+│           └── lint-screen.ts                 # PENDENTE
+├── lint/                            # PENDENTE
 │   ├── index.ts
 │   ├── rules/
 │   │   ├── naming.ts
 │   │   ├── conventions.ts
 │   │   └── security.ts
 │   └── reporter.ts
-└── scaffold/                        # NOVO módulo
+└── scaffold/                        # PENDENTE
     ├── index.ts
     ├── templates/
     │   ├── schema.ts.hbs
@@ -492,9 +493,24 @@ src/
 ## Próximos Passos
 
 1. [ ] Validar proposta com usuários (GitHub Discussions)
-2. [ ] Priorizar Phase 1 features
+2. [x] Priorizar Phase 1 features ✅
 3. [ ] Criar issues detalhadas para cada feature
-4. [ ] Começar implementação do shared migrations
+4. [x] Começar implementação do shared migrations ✅
+
+---
+
+## Changelog
+
+### 2025-12-25
+- ✅ Implementado `SharedMigrationExecutor` em `src/migrator/shared/`
+- ✅ Implementado comando CLI `migrate:shared`
+- ✅ Implementado comando CLI `generate:shared`
+- ✅ Integrado shared migrations na UI interativa
+- ✅ Adicionado suporte a `sharedMigrationsFolder` no `MigratorConfig`
+- ✅ Adicionado método `migrateShared()` no Migrator
+- ✅ Adicionado método `getSharedStatus()` no Migrator
+- ✅ Adicionado método `migrateAllWithShared()` no Migrator
+- ✅ Todos os 674 testes passando
 
 ---
 
