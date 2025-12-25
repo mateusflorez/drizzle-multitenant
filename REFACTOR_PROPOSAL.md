@@ -476,7 +476,11 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
 ### Fase 2: Migrator - EM PROGRESSO
 
 - [x] `SchemaManager` extraído (19 testes, 280 linhas)
-- [ ] `DriftDetector` - Detecção de schema drift
+- [x] `DriftDetector` extraído (28 testes, ~450 linhas)
+  - `drift-detector.ts` - Classe principal
+  - `column-analyzer.ts` - Análise de colunas
+  - `index-analyzer.ts` - Análise de índices
+  - `constraint-analyzer.ts` - Análise de constraints
 - [ ] `Seeder` - Seeding de tenants
 - [ ] `SyncManager` - Sincronização de divergências
 - [ ] `MigrationExecutor` e `BatchExecutor`
@@ -497,10 +501,11 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
 2. [x] Priorizar por impacto (Migrator primeiro)
 3. [x] Implementar testes de caracterização
 4. [x] Extrair `SchemaManager`
-5. [ ] Extrair `DriftDetector`
+5. [x] Extrair `DriftDetector`
 6. [ ] Extrair `Seeder`
-7. [ ] Code review por módulo
-8. [ ] Atualizar documentação
+7. [ ] Extrair `SyncManager`
+8. [ ] Code review por módulo
+9. [ ] Atualizar documentação
 
 ---
 
