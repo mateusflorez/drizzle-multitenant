@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress'
+import pkg from '../../package.json'
 
 export default defineConfig({
   title: 'drizzle-multitenant',
@@ -19,7 +20,7 @@ export default defineConfig({
       { text: 'Examples', link: '/examples/' },
       { text: 'Sessions', link: '/sessions/' },
       {
-        text: 'v1.0.8',
+        text: `v${pkg.version}`,
         items: [
           { text: 'Changelog', link: 'https://github.com/mateusflorez/drizzle-multitenant/releases' },
           { text: 'npm', link: 'https://www.npmjs.com/package/drizzle-multitenant' },

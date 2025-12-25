@@ -1,49 +1,46 @@
 # Examples
 
-Sample projects demonstrating drizzle-multitenant with different frameworks.
+Complete examples demonstrating drizzle-multitenant with different frameworks.
 
-## Quick Start
+## Prerequisites
+
+Start PostgreSQL with Docker:
+
+```yaml
+# docker-compose.yml
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: drizzle-multitenant-examples
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: multitenant
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+```
 
 ```bash
-# Clone the repo
-git clone https://github.com/mateusflorez/drizzle-multitenant.git
-cd drizzle-multitenant/examples
-
-# Start PostgreSQL
 docker-compose up -d
-
-# Choose an example
-cd express-basic  # or fastify, nestjs
-
-# Install and run
-npm install
-npm run dev
 ```
 
 ## Available Examples
 
-| Example | Framework | Port | Description |
-|---------|-----------|------|-------------|
-| [Express](/examples/express) | Express.js | 3000 | Simple REST API with CRUD |
-| [Fastify](/examples/fastify) | Fastify | 3001 | Project management API |
-| [NestJS](/examples/nestjs) | NestJS | 3002 | E-commerce with modules |
-
-## Common Setup
-
-All examples share the same PostgreSQL instance:
-
-```bash
-# Start database
-docker-compose up -d
-
-# Create tenants (from any example folder)
-npx drizzle-multitenant tenant:create --id=acme
-npx drizzle-multitenant tenant:create --id=globex
-
-# Generate and apply migrations
-npm run db:generate
-npm run db:migrate
-```
+| Example | Framework | Description |
+|---------|-----------|-------------|
+| [Express](/examples/express) | Express.js | REST API with CRUD and retry |
+| [Fastify](/examples/fastify) | Fastify | Project management API |
+| [NestJS](/examples/nestjs) | NestJS | E-commerce with modules |
 
 ## Testing Tenant Isolation
 
@@ -70,31 +67,3 @@ curl http://localhost:3000/users -H "X-Tenant-ID: globex"
 | `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/multitenant` | PostgreSQL connection |
 | `PORT` | 3000/3001/3002 | Server port |
 | `NODE_ENV` | - | Set to `development` for debug logs |
-
-## Features Demonstrated
-
-### Express
-- Express middleware (`createExpressMiddleware`)
-- Tenant context via `req.tenantContext`
-- Async methods with retry (`getDbAsync`)
-
-### Fastify
-- Fastify plugin (`createFastifyPlugin`)
-- Tenant database via `request.tenantDb`
-- Project/Task relationships
-
-### NestJS
-- Module registration (`TenantModule.forRoot`)
-- Decorators (`@InjectTenantDb`, `@RequiresTenant`, `@PublicRoute`)
-- Service-based architecture
-- Orders with items
-
-## Clean Up
-
-```bash
-# Stop PostgreSQL
-docker-compose down
-
-# Remove data volume
-docker-compose down -v
-```
