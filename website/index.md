@@ -37,16 +37,16 @@ features:
     details: Type-safe queries joining tenant and shared tables. Automatic schema detection with full Drizzle ORM support.
     link: /guide/cross-schema
     linkText: Query builder
-  - icon: 🔁
-    title: Connection Retry
-    details: Automatic retry with exponential backoff for transient failures. Configurable delays, jitter, and custom retry logic.
-    link: /guide/advanced#connection-retry
-    linkText: Retry config
+  - icon: 💚
+    title: Health Checks & Metrics
+    details: Monitor pool health for load balancers. Export metrics to Prometheus, Datadog, or any observability platform.
+    link: /guide/advanced#health-checks
+    linkText: Observability
   - icon: 🛠️
-    title: Framework Support
-    details: First-class support for Express, Fastify, and NestJS. Middleware, plugins, decorators, and guards included.
-    link: /guide/frameworks/express
-    linkText: Integrations
+    title: Interactive CLI
+    details: Menu-driven interface for tenant management, migrations, seeding, schema drift detection, and cloning.
+    link: /guide/cli#interactive-menu
+    linkText: CLI commands
 ---
 
 <style>

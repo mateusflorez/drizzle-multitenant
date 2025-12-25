@@ -69,6 +69,11 @@ export type {
   CreateTenantOptions,
   DropTenantOptions,
   AppliedMigration,
+  // Seeding types
+  SeedFunction,
+  SeedOptions,
+  TenantSeedResult,
+  SeedResults,
 } from './migrator/types.js';
 
 export type {

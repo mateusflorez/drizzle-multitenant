@@ -1,4 +1,58 @@
 import type { TableFormat } from './table-format.js';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+
+/**
+ * Seed function signature
+ * Called with the tenant database instance and tenant ID
+ *
+ * @example
+ * ```typescript
+ * const seed: SeedFunction = async (db, tenantId) => {
+ *   await db.insert(roles).values([
+ *     { name: 'admin', permissions: ['*'] },
+ *     { name: 'user', permissions: ['read'] },
+ *   ]);
+ * };
+ * ```
+ */
+export type SeedFunction<TSchema extends Record<string, unknown> = Record<string, unknown>> = (
+  db: PostgresJsDatabase<TSchema>,
+  tenantId: string
+) => Promise<void>;
+
+/**
+ * Seed result for a single tenant
+ */
+export interface TenantSeedResult {
+  tenantId: string;
+  schemaName: string;
+  success: boolean;
+  error?: string;
+  durationMs: number;
+}
+
+/**
+ * Aggregate seed results
+ */
+export interface SeedResults {
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  details: TenantSeedResult[];
+}
+
+/**
+ * Options for seed operations
+ */
+export interface SeedOptions {
+  /** Number of concurrent seed operations */
+  concurrency?: number;
+  /** Progress callback */
+  onProgress?: (tenantId: string, status: 'starting' | 'seeding' | 'completed' | 'failed' | 'skipped') => void;
+  /** Error handler */
+  onError?: (tenantId: string, error: Error) => 'continue' | 'abort';
+}
 
 /**
  * Migration file metadata
@@ -226,3 +280,231 @@ export interface SyncOptions {
   /** Error handler */
   onError?: MigrationErrorHandler;
 }
+
+// ============================================================================
+// Schema Drift Detection Types
+// ============================================================================
+
+/**
+ * Column information from database introspection
+ */
+export interface ColumnInfo {
+  /** Column name */
+  name: string;
+  /** PostgreSQL data type */
+  dataType: string;
+  /** Full data type (e.g., varchar(255)) */
+  udtName: string;
+  /** Whether column is nullable */
+  isNullable: boolean;
+  /** Default value expression */
+  columnDefault: string | null;
+  /** Character maximum length for varchar/char */
+  characterMaximumLength: number | null;
+  /** Numeric precision for numeric types */
+  numericPrecision: number | null;
+  /** Numeric scale for numeric types */
+  numericScale: number | null;
+  /** Ordinal position in table */
+  ordinalPosition: number;
+}
+
+/**
+ * Index information from database introspection
+ */
+export interface IndexInfo {
+  /** Index name */
+  name: string;
+  /** Column names in the index */
+  columns: string[];
+  /** Whether index is unique */
+  isUnique: boolean;
+  /** Whether index is primary key */
+  isPrimary: boolean;
+  /** Index definition SQL */
+  definition: string;
+}
+
+/**
+ * Constraint information from database introspection
+ */
+export interface ConstraintInfo {
+  /** Constraint name */
+  name: string;
+  /** Constraint type (PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK) */
+  type: 'PRIMARY KEY' | 'FOREIGN KEY' | 'UNIQUE' | 'CHECK';
+  /** Columns involved in constraint */
+  columns: string[];
+  /** Foreign table (for foreign keys) */
+  foreignTable?: string;
+  /** Foreign columns (for foreign keys) */
+  foreignColumns?: string[];
+  /** Check expression (for check constraints) */
+  checkExpression?: string;
+}
+
+/**
+ * Table schema information
+ */
+export interface TableSchema {
+  /** Table name */
+  name: string;
+  /** Columns in the table */
+  columns: ColumnInfo[];
+  /** Indexes on the table */
+  indexes: IndexInfo[];
+  /** Constraints on the table */
+  constraints: ConstraintInfo[];
+}
+
+/**
+ * Full schema for a tenant
+ */
+export interface TenantSchema {
+  /** Tenant ID */
+  tenantId: string;
+  /** Schema name */
+  schemaName: string;
+  /** Tables in the schema */
+  tables: TableSchema[];
+  /** Introspection timestamp */
+  introspectedAt: Date;
+}
+
+/**
+ * Column drift details
+ */
+export interface ColumnDrift {
+  /** Column name */
+  column: string;
+  /** Type of drift */
+  type: 'missing' | 'extra' | 'type_mismatch' | 'nullable_mismatch' | 'default_mismatch';
+  /** Expected value (from reference) */
+  expected?: string | boolean | null;
+  /** Actual value (from tenant) */
+  actual?: string | boolean | null;
+  /** Human-readable description */
+  description: string;
+}
+
+/**
+ * Index drift details
+ */
+export interface IndexDrift {
+  /** Index name */
+  index: string;
+  /** Type of drift */
+  type: 'missing' | 'extra' | 'definition_mismatch';
+  /** Expected definition */
+  expected?: string;
+  /** Actual definition */
+  actual?: string;
+  /** Human-readable description */
+  description: string;
+}
+
+/**
+ * Constraint drift details
+ */
+export interface ConstraintDrift {
+  /** Constraint name */
+  constraint: string;
+  /** Type of drift */
+  type: 'missing' | 'extra' | 'definition_mismatch';
+  /** Expected details */
+  expected?: string;
+  /** Actual details */
+  actual?: string;
+  /** Human-readable description */
+  description: string;
+}
+
+/**
+ * Table drift details
+ */
+export interface TableDrift {
+  /** Table name */
+  table: string;
+  /** Whether the entire table is missing or extra */
+  status: 'ok' | 'missing' | 'extra' | 'drifted';
+  /** Column drifts */
+  columns: ColumnDrift[];
+  /** Index drifts */
+  indexes: IndexDrift[];
+  /** Constraints drifts */
+  constraints: ConstraintDrift[];
+}
+
+/**
+ * Schema drift for a single tenant
+ */
+export interface TenantSchemaDrift {
+  /** Tenant ID */
+  tenantId: string;
+  /** Schema name */
+  schemaName: string;
+  /** Whether schema has drift */
+  hasDrift: boolean;
+  /** Table-level drifts */
+  tables: TableDrift[];
+  /** Total number of issues */
+  issueCount: number;
+  /** Error if introspection failed */
+  error?: string;
+}
+
+/**
+ * Aggregate schema drift status
+ */
+export interface SchemaDriftStatus {
+  /** Reference tenant used for comparison */
+  referenceTenant: string;
+  /** Total tenants checked */
+  total: number;
+  /** Tenants without drift */
+  noDrift: number;
+  /** Tenants with drift */
+  withDrift: number;
+  /** Tenants with errors */
+  error: number;
+  /** Detailed results per tenant */
+  details: TenantSchemaDrift[];
+  /** Timestamp of the check */
+  timestamp: string;
+  /** Duration of the check in ms */
+  durationMs: number;
+}
+
+/**
+ * Options for schema drift detection
+ */
+export interface SchemaDriftOptions {
+  /** Tenant ID to use as reference (default: first tenant) */
+  referenceTenant?: string;
+  /** Specific tenant IDs to check (default: all tenants) */
+  tenantIds?: string[];
+  /** Number of concurrent checks */
+  concurrency?: number;
+  /** Whether to include index comparison */
+  includeIndexes?: boolean;
+  /** Whether to include constraint comparison */
+  includeConstraints?: boolean;
+  /** Tables to exclude from comparison */
+  excludeTables?: string[];
+  /** Progress callback */
+  onProgress?: (tenantId: string, status: 'starting' | 'introspecting' | 'comparing' | 'completed' | 'failed') => void;
+}
+
+// ============================================================================
+// Clone Types (re-exported from clone module)
+// ============================================================================
+
+export type {
+  CloneTenantOptions,
+  CloneTenantResult,
+  CloneProgressCallback,
+  CloneProgressStatus,
+  AnonymizeOptions,
+  AnonymizeRules,
+  AnonymizeValue,
+} from './clone/types.js';

@@ -176,138 +176,95 @@ interface DebugContext {
 
 ## Health Checks
 
-Verify the health of all pools and connections for monitoring and load balancer integration:
+Monitor pool health for load balancers and observability:
 
 ```typescript
-const health = await tenants.healthCheck();
+const manager = createTenantManager(config);
 
-if (health.healthy) {
-  console.log('All systems operational');
-} else {
-  console.log(`${health.unhealthyPools} pools are unhealthy`);
-}
+// Check health of all pools
+const health = await manager.healthCheck();
+// {
+//   healthy: true,
+//   pools: [
+//     { tenantId: 'abc', status: 'ok', totalConnections: 5, idleConnections: 3 },
+//     { tenantId: 'def', status: 'degraded', totalConnections: 5, waitingRequests: 2 },
+//   ],
+//   sharedDb: { status: 'ok', responseTimeMs: 12 },
+//   totalPools: 2,
+//   degradedPools: 0,
+//   unhealthyPools: 0,
+//   timestamp: '2024-01-15T10:30:00Z',
+//   durationMs: 45
+// }
 ```
 
-### Express Endpoint
+### Load Balancer Endpoint
 
 ```typescript
 app.get('/health', async (req, res) => {
-  const health = await tenants.healthCheck();
+  const health = await manager.healthCheck();
   res.status(health.healthy ? 200 : 503).json(health);
 });
 ```
 
-### Options
+### Health Check Options
 
 ```typescript
-await tenants.healthCheck({
-  ping: true,              // Execute SELECT 1 to verify connection (default: true)
-  pingTimeoutMs: 5000,     // Timeout for ping query (default: 5000)
-  includeShared: true,     // Check shared database (default: true)
-  tenantIds: ['t1', 't2'], // Check specific tenants only (optional)
+const health = await manager.healthCheck({
+  tenantIds: ['tenant-1', 'tenant-2'], // Check specific tenants
+  ping: true,                           // Actually ping the database
+  pingTimeoutMs: 3000,                  // Timeout for ping
+  includeShared: true,                  // Include shared database
 });
 ```
 
-### HealthCheckResult
+### Pool Statuses
 
-```typescript
-interface HealthCheckResult {
-  healthy: boolean;              // Overall health status
-  pools: PoolHealth[];           // Per-tenant pool health
-  sharedDb: PoolHealthStatus;    // 'ok' | 'degraded' | 'unhealthy'
-  sharedDbResponseTimeMs?: number;
-  totalPools: number;
-  degradedPools: number;
-  unhealthyPools: number;
-  timestamp: string;
-  durationMs: number;
-}
-
-interface PoolHealth {
-  tenantId: string;
-  schemaName: string;
-  status: 'ok' | 'degraded' | 'unhealthy';
-  totalConnections: number;
-  idleConnections: number;
-  waitingRequests: number;
-  responseTimeMs?: number;
-  error?: string;
-}
-```
-
-### Health Status
-
-| Status | Condition |
-|--------|-----------|
-| `ok` | Pool responding normally |
-| `degraded` | Requests waiting in queue or slow response |
-| `unhealthy` | Ping failed or timed out |
+| Status | Description |
+|--------|-------------|
+| `ok` | Pool healthy, connections available |
+| `degraded` | Pool has waiting requests or high usage |
+| `unhealthy` | Pool unresponsive or erroring |
 
 ## Metrics
 
-Collect metrics on demand with zero overhead. Data is returned in a format-agnostic structure that you can format for any monitoring system:
+Get pool metrics for monitoring (Prometheus, Datadog, etc.):
 
 ```typescript
-const metrics = tenants.getMetrics();
-
-console.log(`Active pools: ${metrics.pools.total}/${metrics.pools.maxPools}`);
-```
-
-### MetricsResult
-
-```typescript
-interface MetricsResult {
-  pools: {
-    total: number;
-    maxPools: number;
-    tenants: TenantPoolMetrics[];
-  };
-  shared: {
-    initialized: boolean;
-    connections: ConnectionMetrics | null;
-  };
-  timestamp: string;
-}
-
-interface TenantPoolMetrics {
-  tenantId: string;
-  schemaName: string;
-  connections: ConnectionMetrics;
-  lastAccessedAt: string;
-}
-
-interface ConnectionMetrics {
-  total: number;
-  idle: number;
-  waiting: number;
-}
+const metrics = manager.getMetrics();
+// {
+//   pools: {
+//     total: 15,
+//     maxPools: 50,
+//     tenants: [
+//       { tenantId: 'abc', schemaName: 'tenant_abc', connections: { total: 10, idle: 7, waiting: 0 } },
+//       { tenantId: 'def', schemaName: 'tenant_def', connections: { total: 10, idle: 3, waiting: 2 } },
+//     ],
+//   },
+//   shared: { connections: { total: 10, idle: 8, waiting: 0 } },
+//   timestamp: '2024-01-15T10:30:00Z',
+// }
 ```
 
 ### Prometheus Integration
 
 ```typescript
-import { Gauge, register } from 'prom-client';
+import { Gauge } from 'prom-client';
 
-const poolGauge = new Gauge({
-  name: 'drizzle_pool_count',
-  help: 'Number of active tenant pools',
-});
-
+const poolGauge = new Gauge({ name: 'drizzle_pool_count', help: 'Active pools' });
 const connectionsGauge = new Gauge({
   name: 'drizzle_connections',
-  help: 'Connection metrics by tenant',
-  labelNames: ['tenant', 'state'],
+  help: 'Connections by tenant',
+  labelNames: ['tenant', 'state']
 });
 
 app.get('/metrics', async (req, res) => {
-  const metrics = tenants.getMetrics();
+  const metrics = manager.getMetrics();
 
   poolGauge.set(metrics.pools.total);
-
   for (const pool of metrics.pools.tenants) {
-    connectionsGauge.labels(pool.tenantId, 'total').set(pool.connections.total);
     connectionsGauge.labels(pool.tenantId, 'idle').set(pool.connections.idle);
-    connectionsGauge.labels(pool.tenantId, 'waiting').set(pool.connections.waiting);
+    connectionsGauge.labels(pool.tenantId, 'active').set(pool.connections.total - pool.connections.idle);
   }
 
   res.set('Content-Type', 'text/plain');
@@ -315,42 +272,106 @@ app.get('/metrics', async (req, res) => {
 });
 ```
 
-### Datadog / Custom APM
+## Lifecycle Hooks
+
+Hook into pool lifecycle events:
 
 ```typescript
-import { StatsD } from 'hot-shots';
-
-const statsd = new StatsD();
-
-setInterval(() => {
-  const metrics = tenants.getMetrics();
-
-  statsd.gauge('drizzle.pools.total', metrics.pools.total);
-
-  for (const pool of metrics.pools.tenants) {
-    statsd.gauge('drizzle.connections.idle', pool.connections.idle, { tenant: pool.tenantId });
-    statsd.gauge('drizzle.connections.waiting', pool.connections.waiting, { tenant: pool.tenantId });
-  }
-}, 10000);
+export default defineConfig({
+  // ...
+  hooks: {
+    onPoolCreated: (tenantId) => {
+      logger.info({ tenant: tenantId }, 'Pool created');
+    },
+    onPoolEvicted: (tenantId) => {
+      logger.info({ tenant: tenantId }, 'Pool evicted');
+    },
+    onError: (tenantId, error) => {
+      logger.error({ tenant: tenantId, error: error.message }, 'Pool error');
+      // Send to error tracking
+      Sentry.captureException(error, { tags: { tenantId } });
+    },
+  },
+});
 ```
 
-### Combined Health + Metrics Endpoint
+## Programmatic Seeding
+
+Seed tenants from code:
 
 ```typescript
-app.get('/status', async (req, res) => {
-  const [health, metrics] = await Promise.all([
-    tenants.healthCheck(),
-    Promise.resolve(tenants.getMetrics()),
-  ]);
+import { createMigrator } from 'drizzle-multitenant/migrator';
 
-  res.json({
-    status: health.healthy ? 'healthy' : 'unhealthy',
-    pools: {
-      total: metrics.pools.total,
-      max: metrics.pools.maxPools,
-      unhealthy: health.unhealthyPools,
-      degraded: health.degradedPools,
-    },
-    timestamp: metrics.timestamp,
-  });
+const migrator = createMigrator(config, migratorConfig);
+
+// Seed single tenant
+await migrator.seedTenant('tenant-1', async (db, tenantId) => {
+  await db.insert(roles).values([
+    { name: 'admin', permissions: ['*'] },
+    { name: 'user', permissions: ['read'] },
+  ]);
 });
+
+// Seed all tenants
+await migrator.seedAll(seedFunction, { concurrency: 10 });
+
+// Seed specific tenants
+await migrator.seedTenants(['tenant-1', 'tenant-2'], seedFunction);
+```
+
+## Schema Drift Detection
+
+Detect schema differences between tenants programmatically:
+
+```typescript
+const migrator = createMigrator(config, migratorConfig);
+
+// Detect drift in all tenants
+const drift = await migrator.getSchemaDrift();
+// {
+//   referenceTenant: 'tenant-1',
+//   total: 5,
+//   noDrift: 4,
+//   withDrift: 1,
+//   error: 0,
+//   details: [...],
+//   timestamp: '2024-01-15T10:30:00Z',
+//   durationMs: 245
+// }
+
+// Compare specific tenant against reference
+const tenantDrift = await migrator.getTenantSchemaDrift('tenant-2', 'tenant-1');
+
+// Introspect schema of a tenant
+const schema = await migrator.introspectTenantSchema('tenant-1');
+```
+
+## Tenant Cloning
+
+Clone tenants programmatically:
+
+```typescript
+const migrator = createMigrator(config, migratorConfig);
+
+// Clone schema only
+await migrator.cloneTenant('production', 'staging');
+
+// Clone with data
+await migrator.cloneTenant('production', 'dev', {
+  includeData: true,
+});
+
+// Clone with data anonymization
+await migrator.cloneTenant('production', 'dev', {
+  includeData: true,
+  anonymize: {
+    enabled: true,
+    rules: {
+      users: {
+        email: null,
+        phone: null,
+      },
+    },
+  },
+});
+```

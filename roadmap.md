@@ -50,519 +50,27 @@
 - [x] CLI `migrationsTable` config support
 - [x] 154 testes passando
 
+### v1.1.0 - Resiliência e Observabilidade
+- [x] Retry logic com backoff exponencial e jitter
+- [x] `manager.healthCheck()` API
+- [x] `manager.getMetrics()` API (dados crus, zero deps)
+- [x] Hooks para observabilidade (`onPoolCreated`, `onPoolEvicted`, `onError`)
+- [x] 38 novos testes (retry: 20, healthCheck: 11, getMetrics: 7)
+
+### v1.2.0 - Developer Experience
+- [x] CLI interativo com inquirer
+- [x] Tenant seeding API (`seedTenant`, `seedAll`, `seedTenants`)
+- [x] Seed CLI command (`drizzle-multitenant seed`)
+- [x] Seed no menu interativo
+- [x] Schema drift detection (`drizzle-multitenant diff`)
+- [x] Tenant cloning com anonymization básica
+- [x] Documentação interativa (VitePress)
+
 ---
 
 ## Próximas Versões
 
-### v1.1.0 - Resiliência e Observabilidade
-
-#### ~~Retry Logic para Conexões~~ (Concluído v1.1.0)
-~~Conexões podem falhar temporariamente. Adicionar retry automático com backoff exponencial.~~
-
-```typescript
-import { defineConfig } from 'drizzle-multitenant';
-
-export default defineConfig({
-  connection: {
-    url: process.env.DATABASE_URL!,
-    retry: {
-      maxAttempts: 3,
-      initialDelayMs: 100,
-      maxDelayMs: 5000,
-      backoffMultiplier: 2,
-      jitter: true,  // Evita thundering herd
-      onRetry: (attempt, error, delay) => console.log(`Retry ${attempt}`),
-    },
-  },
-  // ...
-});
-
-// Uso com retry automático
-const db = await tenants.getDbAsync('tenant-123');
-const sharedDb = await tenants.getSharedDbAsync();
-```
-
-#### ~~Health Checks~~ (Concluído v1.1.0)
-~~Verificar saúde dos pools e conexões.~~
-
-```typescript
-const manager = createTenantManager(config);
-
-// Verificar saúde de todos os pools
-const health = await manager.healthCheck();
-// {
-//   healthy: true,
-//   pools: [
-//     { tenantId: 'abc', status: 'ok', totalConnections: 5, idleConnections: 3 },
-//     { tenantId: 'def', status: 'degraded', totalConnections: 5, waitingRequests: 2 },
-//   ],
-//   sharedDb: 'ok',
-//   sharedDbResponseTimeMs: 12,
-//   totalPools: 2,
-//   degradedPools: 1,
-//   unhealthyPools: 0,
-//   timestamp: '2024-01-15T10:30:00Z',
-//   durationMs: 45
-// }
-
-// Endpoint para load balancers
-app.get('/health', async (req, res) => {
-  const health = await manager.healthCheck();
-  res.status(health.healthy ? 200 : 503).json(health);
-});
-
-// Verificar tenants específicos
-const health = await manager.healthCheck({
-  tenantIds: ['tenant-1', 'tenant-2'],
-  ping: true,
-  pingTimeoutMs: 3000,
-  includeShared: true,
-});
-```
-
-#### ~~Métricas Agnósticas (Zero Deps)~~ (Concluído v1.1.0)
-~~Expor métricas em formato agnóstico - usuário integra com Prometheus/Datadog/etc.~~
-
-> **Filosofia**: Zero dependências extras, zero overhead de tracking contínuo.
-> Dados coletados sob demanda via `getMetrics()`.
-
-```typescript
-// Coleta métricas sob demanda (zero overhead quando não chamado)
-const metrics = manager.getMetrics();
-// {
-//   pools: {
-//     total: 15,
-//     maxPools: 50,
-//     tenants: [
-//       { tenantId: 'abc', schemaName: 'tenant_abc', connections: { total: 10, idle: 7, waiting: 0 } },
-//       { tenantId: 'def', schemaName: 'tenant_def', connections: { total: 10, idle: 3, waiting: 2 } },
-//     ],
-//   },
-//   shared: { connections: { total: 10, idle: 8, waiting: 0 } },
-//   timestamp: '2024-01-15T10:30:00Z',
-// }
-
-// Usuário formata para Prometheus se quiser
-import { Gauge } from 'prom-client';
-
-const poolGauge = new Gauge({ name: 'drizzle_pool_count', help: 'Active pools' });
-const connectionsGauge = new Gauge({
-  name: 'drizzle_connections',
-  help: 'Connections by tenant',
-  labelNames: ['tenant', 'state']
-});
-
-app.get('/metrics', async (req, res) => {
-  const metrics = manager.getMetrics();
-
-  poolGauge.set(metrics.pools.total);
-  for (const pool of metrics.pools.tenants) {
-    connectionsGauge.labels(pool.tenantId, 'idle').set(pool.connections.idle);
-    connectionsGauge.labels(pool.tenantId, 'active').set(pool.connections.total - pool.connections.idle);
-  }
-
-  res.set('Content-Type', 'text/plain');
-  res.send(await register.metrics());
-});
-```
-
-#### Hooks para Observabilidade
-Hooks existentes já suportam integração com qualquer logger/APM.
-
-```typescript
-import pino from 'pino';
-
-const logger = pino({ level: 'info' });
-
-export default defineConfig({
-  // ...
-  hooks: {
-    onPoolCreated: (tenantId) => {
-      logger.info({ tenant: tenantId, event: 'pool_created' }, 'Pool created');
-    },
-    onPoolEvicted: (tenantId) => {
-      logger.info({ tenant: tenantId, event: 'pool_evicted' }, 'Pool evicted');
-    },
-    onError: (tenantId, error) => {
-      logger.error({ tenant: tenantId, error: error.message }, 'Pool error');
-    },
-  },
-});
-```
-
-**Checklist v1.1.0:**
-- [x] Retry logic com backoff exponencial
-- [x] `manager.healthCheck()` API
-- [x] `manager.getMetrics()` API (dados crus, zero deps)
-- [x] Testes unitários e integração (retry: 20 testes, healthCheck: 11 testes, getMetrics: 7 testes)
-
----
-
-### v1.2.0 - Segurança
-
-#### Schema Name Sanitization
-Validar e sanitizar nomes de schema para prevenir SQL injection.
-
-```typescript
-import { defineConfig } from 'drizzle-multitenant';
-
-export default defineConfig({
-  isolation: {
-    strategy: 'schema',
-    schemaNameTemplate: (tenantId) => `tenant_${tenantId}`,
-    // Sanitização automática habilitada por padrão
-    sanitize: {
-      enabled: true,
-      maxLength: 63, // Limite PostgreSQL
-      allowedChars: /^[a-z0-9_]+$/,
-      reservedNames: ['public', 'pg_catalog', 'information_schema'],
-    },
-  },
-});
-
-// Throws error se nome inválido
-manager.getDb('tenant; DROP TABLE users;--'); // Error: Invalid tenant ID
-```
-
-#### Rate Limiting por Tenant
-Limitar queries por tenant para prevenir abuso.
-
-```typescript
-export default defineConfig({
-  // ...
-  rateLimit: {
-    enabled: true,
-    maxQueriesPerSecond: 100,
-    maxConnectionsPerTenant: 5,
-    onLimitExceeded: (tenantId, limit) => {
-      logger.warn({ tenant: tenantId, limit }, 'Rate limit exceeded');
-      // 'throttle' | 'reject' | 'queue'
-      return 'throttle';
-    },
-  },
-});
-```
-
-#### Tenant Isolation Audit
-Auditoria para garantir isolamento entre tenants.
-
-```typescript
-export default defineConfig({
-  // ...
-  audit: {
-    enabled: true,
-    logQueries: true,
-    detectCrossSchemaAccess: true,
-    onViolation: async (event) => {
-      // {
-      //   type: 'cross_schema_access',
-      //   tenant: 'abc',
-      //   query: 'SELECT * FROM tenant_def.users',
-      //   timestamp: Date
-      // }
-      await sendAlert(event);
-    },
-  },
-});
-```
-
-**Checklist v1.2.0:**
-- [ ] Schema name sanitization
-- [ ] Rate limiting por tenant
-- [ ] Audit logging
-- [ ] Detecção de cross-schema access
-- [ ] Testes de segurança
-
----
-
-### v1.3.0 - Performance
-
-#### Connection Queue
-Gerenciar overflow de pools com queue de espera.
-
-```typescript
-export default defineConfig({
-  isolation: {
-    maxPools: 50,
-    pooling: {
-      strategy: 'queue', // 'queue' | 'reject' | 'evict-lru'
-      queueTimeout: 5000,
-      maxWaitingRequests: 100,
-    },
-  },
-});
-
-// Eventos de queue
-hooks: {
-  onQueueFull: (tenantId) => {
-    logger.warn({ tenant: tenantId }, 'Connection queue full');
-  },
-  onQueueTimeout: (tenantId, waitTime) => {
-    logger.error({ tenant: tenantId, waitTime }, 'Queue timeout');
-  },
-}
-```
-
-#### Query Caching
-Cache opcional para queries repetidas.
-
-```typescript
-import { createTenantManager } from 'drizzle-multitenant';
-import Redis from 'ioredis';
-
-const redis = new Redis();
-
-const manager = createTenantManager({
-  ...config,
-  cache: {
-    enabled: true,
-    provider: redis, // ou 'memory'
-    defaultTtlMs: 60000,
-    maxSize: 10000, // para memory provider
-    keyPrefix: 'dmt:',
-  },
-});
-
-// Uso no código
-const db = manager.getDb('tenant-123');
-
-// Query com cache
-const users = await db
-  .select()
-  .from(schema.users)
-  .where(eq(schema.users.active, true))
-  .$cache({ ttl: 5000, key: 'active-users' });
-
-// Invalidar cache
-await manager.invalidateCache('tenant-123', 'active-users');
-await manager.invalidateTenantCache('tenant-123'); // todo cache do tenant
-```
-
-#### Prepared Statements Pool
-Reutilizar prepared statements entre requests.
-
-```typescript
-export default defineConfig({
-  connection: {
-    url: process.env.DATABASE_URL!,
-    preparedStatements: {
-      enabled: true,
-      maxPerTenant: 100,
-      ttlMs: 3600000, // 1 hora
-    },
-  },
-});
-```
-
-**Checklist v1.3.0:**
-- [ ] Connection queue com timeout
-- [ ] Query caching (memory + Redis)
-- [ ] Cache invalidation API
-- [ ] Prepared statements pool
-- [ ] Benchmarks de performance
-
----
-
-### v1.4.0 - Novas Estratégias de Isolamento
-
-#### Row-Level Security (RLS)
-Isolamento por linha usando RLS do PostgreSQL.
-
-```typescript
-export default defineConfig({
-  isolation: {
-    strategy: 'row',
-    tenantColumn: 'tenant_id',
-    enableRLS: true,
-  },
-  schemas: {
-    tenant: tenantSchema,
-  },
-});
-
-// Gera automaticamente:
-// CREATE POLICY tenant_isolation ON users
-//   USING (tenant_id = current_setting('app.tenant_id')::uuid);
-
-// Uso transparente
-const db = manager.getDb('tenant-123');
-const users = await db.select().from(schema.users);
-// WHERE tenant_id = 'tenant-123' aplicado automaticamente
-```
-
-#### Database-per-Tenant
-Isolamento completo por database.
-
-```typescript
-export default defineConfig({
-  isolation: {
-    strategy: 'database',
-    databaseNameTemplate: (tenantId) => `db_${tenantId}`,
-    createDatabase: true, // criar automaticamente
-  },
-});
-
-// Cada tenant tem seu próprio database
-// db_tenant_abc, db_tenant_def, etc.
-```
-
-#### Hybrid Strategy
-Combinar estratégias para diferentes tiers de tenants.
-
-```typescript
-export default defineConfig({
-  isolation: {
-    strategy: 'hybrid',
-    default: 'row', // tenants pequenos
-    rules: [
-      {
-        condition: async (tenantId) => {
-          const plan = await getTenantPlan(tenantId);
-          return plan === 'enterprise';
-        },
-        strategy: 'schema', // tenants enterprise
-      },
-      {
-        condition: async (tenantId) => {
-          const rows = await getTenantRowCount(tenantId);
-          return rows > 100000;
-        },
-        strategy: 'schema', // tenants grandes
-      },
-    ],
-    onPromotion: async (tenantId, from, to) => {
-      // Migrar dados de RLS para schema dedicado
-      await migrateDataToSchema(tenantId);
-      logger.info({ tenant: tenantId, from, to }, 'Tenant promoted');
-    },
-  },
-});
-```
-
-**Checklist v1.4.0:**
-- [ ] Row-Level Security (RLS)
-- [ ] Geração automática de policies
-- [ ] Database-per-tenant strategy
-- [ ] Hybrid strategy com regras
-- [ ] Migração entre estratégias
-
----
-
-### v1.5.0 - Developer Experience
-
-#### CLI Interativo
-Modo interativo para operações comuns.
-
-```bash
-$ npx drizzle-multitenant
-
-? What do you want to do? (Use arrow keys)
-❯ Migrate all tenants
-  Check migration status
-  Create new tenant
-  Drop tenant
-  View pool statistics
-  Generate migration
-  Exit
-
-? Select tenants to migrate:
-  [x] tenant_abc (2 pending)
-  [x] tenant_def (2 pending)
-  [ ] tenant_ghi (up to date)
-```
-
-#### Tenant Seeding
-Popular dados iniciais em tenants.
-
-```typescript
-// seeds/initial.ts
-import { SeedFunction } from 'drizzle-multitenant';
-
-export const seed: SeedFunction = async (db, tenantId) => {
-  await db.insert(roles).values([
-    { name: 'admin', permissions: ['*'] },
-    { name: 'user', permissions: ['read'] },
-  ]);
-
-  await db.insert(settings).values({
-    tenantId,
-    theme: 'light',
-    language: 'pt-BR',
-  });
-};
-```
-
-```bash
-# CLI
-npx drizzle-multitenant seed --tenant=abc --file=./seeds/initial.ts
-npx drizzle-multitenant seed --all --file=./seeds/initial.ts
-
-# Programático
-await migrator.seedTenant('abc', seed);
-await migrator.seedAll(seed, { concurrency: 10 });
-```
-
-#### Schema Drift Detection
-Detectar divergências entre schema esperado e atual.
-
-```bash
-$ npx drizzle-multitenant diff --tenant=abc
-
-Schema drift detected in tenant_abc:
-
-  Missing columns:
-    - users.avatar_url (varchar)
-    - users.last_login (timestamp)
-
-  Extra columns:
-    - users.legacy_field (will be removed)
-
-  Index differences:
-    - Missing: idx_users_email
-    - Extra: idx_legacy_lookup
-
-Run 'drizzle-multitenant migrate --tenant=abc' to fix.
-```
-
-#### Tenant Cloning
-Clonar tenant para desenvolvimento/teste.
-
-```bash
-# CLI
-npx drizzle-multitenant tenant:clone \
-  --from=production-tenant \
-  --to=dev-tenant \
-  --include-data \
-  --anonymize  # GDPR compliance
-```
-
-```typescript
-// Programático
-await migrator.cloneTenant('source', 'target', {
-  includeData: true,
-  anonymize: {
-    enabled: true,
-    rules: {
-      users: {
-        email: (val) => `user-${hash(val)}@example.com`,
-        name: () => faker.person.fullName(),
-        phone: () => null,
-      },
-    },
-  },
-});
-```
-
-**Checklist v1.5.0:**
-- [ ] CLI interativo com inquirer
-- [ ] Tenant seeding API
-- [ ] Schema drift detection
-- [ ] Tenant cloning com anonymization
-- [ ] Documentação interativa
-
----
-
-### v1.6.0 - Integrações Avançadas
+### v1.3.0 - Integrações Avançadas (Próxima)
 
 #### tRPC Integration
 Middleware para tRPC.
@@ -652,12 +160,262 @@ const worker = new Worker(
 );
 ```
 
-**Checklist v1.6.0:**
+**Checklist v1.3.0:**
 - [ ] tRPC middleware
 - [ ] Apollo Server context
 - [ ] GraphQL Yoga context
 - [ ] BullMQ plugin
 - [ ] Exemplos e documentação
+
+---
+
+### v1.4.0 - Segurança
+
+#### Schema Name Sanitization
+Validar e sanitizar nomes de schema para prevenir SQL injection.
+
+```typescript
+import { defineConfig } from 'drizzle-multitenant';
+
+export default defineConfig({
+  isolation: {
+    strategy: 'schema',
+    schemaNameTemplate: (tenantId) => `tenant_${tenantId}`,
+    // Sanitização automática habilitada por padrão
+    sanitize: {
+      enabled: true,
+      maxLength: 63, // Limite PostgreSQL
+      allowedChars: /^[a-z0-9_]+$/,
+      reservedNames: ['public', 'pg_catalog', 'information_schema'],
+    },
+  },
+});
+
+// Throws error se nome inválido
+manager.getDb('tenant; DROP TABLE users;--'); // Error: Invalid tenant ID
+```
+
+#### Rate Limiting por Tenant
+Limitar queries por tenant para prevenir abuso.
+
+```typescript
+export default defineConfig({
+  // ...
+  rateLimit: {
+    enabled: true,
+    maxQueriesPerSecond: 100,
+    maxConnectionsPerTenant: 5,
+    onLimitExceeded: (tenantId, limit) => {
+      logger.warn({ tenant: tenantId, limit }, 'Rate limit exceeded');
+      // 'throttle' | 'reject' | 'queue'
+      return 'throttle';
+    },
+  },
+});
+```
+
+#### Tenant Isolation Audit
+Auditoria para garantir isolamento entre tenants.
+
+```typescript
+export default defineConfig({
+  // ...
+  audit: {
+    enabled: true,
+    logQueries: true,
+    detectCrossSchemaAccess: true,
+    onViolation: async (event) => {
+      // {
+      //   type: 'cross_schema_access',
+      //   tenant: 'abc',
+      //   query: 'SELECT * FROM tenant_def.users',
+      //   timestamp: Date
+      // }
+      await sendAlert(event);
+    },
+  },
+});
+```
+
+**Checklist v1.4.0:**
+- [ ] Schema name sanitization
+- [ ] Rate limiting por tenant
+- [ ] Audit logging
+- [ ] Detecção de cross-schema access
+- [ ] Testes de segurança
+
+---
+
+### v1.5.0 - Performance
+
+#### Connection Queue
+Gerenciar overflow de pools com queue de espera.
+
+```typescript
+export default defineConfig({
+  isolation: {
+    maxPools: 50,
+    pooling: {
+      strategy: 'queue', // 'queue' | 'reject' | 'evict-lru'
+      queueTimeout: 5000,
+      maxWaitingRequests: 100,
+    },
+  },
+});
+
+// Eventos de queue
+hooks: {
+  onQueueFull: (tenantId) => {
+    logger.warn({ tenant: tenantId }, 'Connection queue full');
+  },
+  onQueueTimeout: (tenantId, waitTime) => {
+    logger.error({ tenant: tenantId, waitTime }, 'Queue timeout');
+  },
+}
+```
+
+#### Query Caching
+Cache opcional para queries repetidas.
+
+```typescript
+import { createTenantManager } from 'drizzle-multitenant';
+import Redis from 'ioredis';
+
+const redis = new Redis();
+
+const manager = createTenantManager({
+  ...config,
+  cache: {
+    enabled: true,
+    provider: redis, // ou 'memory'
+    defaultTtlMs: 60000,
+    maxSize: 10000, // para memory provider
+    keyPrefix: 'dmt:',
+  },
+});
+
+// Uso no código
+const db = manager.getDb('tenant-123');
+
+// Query com cache
+const users = await db
+  .select()
+  .from(schema.users)
+  .where(eq(schema.users.active, true))
+  .$cache({ ttl: 5000, key: 'active-users' });
+
+// Invalidar cache
+await manager.invalidateCache('tenant-123', 'active-users');
+await manager.invalidateTenantCache('tenant-123'); // todo cache do tenant
+```
+
+#### Prepared Statements Pool
+Reutilizar prepared statements entre requests.
+
+```typescript
+export default defineConfig({
+  connection: {
+    url: process.env.DATABASE_URL!,
+    preparedStatements: {
+      enabled: true,
+      maxPerTenant: 100,
+      ttlMs: 3600000, // 1 hora
+    },
+  },
+});
+```
+
+**Checklist v1.5.0:**
+- [ ] Connection queue com timeout
+- [ ] Query caching (memory + Redis)
+- [ ] Cache invalidation API
+- [ ] Prepared statements pool
+- [ ] Benchmarks de performance
+
+---
+
+### v1.6.0 - Novas Estratégias de Isolamento
+
+#### Row-Level Security (RLS)
+Isolamento por linha usando RLS do PostgreSQL.
+
+```typescript
+export default defineConfig({
+  isolation: {
+    strategy: 'row',
+    tenantColumn: 'tenant_id',
+    enableRLS: true,
+  },
+  schemas: {
+    tenant: tenantSchema,
+  },
+});
+
+// Gera automaticamente:
+// CREATE POLICY tenant_isolation ON users
+//   USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+// Uso transparente
+const db = manager.getDb('tenant-123');
+const users = await db.select().from(schema.users);
+// WHERE tenant_id = 'tenant-123' aplicado automaticamente
+```
+
+#### Database-per-Tenant
+Isolamento completo por database.
+
+```typescript
+export default defineConfig({
+  isolation: {
+    strategy: 'database',
+    databaseNameTemplate: (tenantId) => `db_${tenantId}`,
+    createDatabase: true, // criar automaticamente
+  },
+});
+
+// Cada tenant tem seu próprio database
+// db_tenant_abc, db_tenant_def, etc.
+```
+
+#### Hybrid Strategy
+Combinar estratégias para diferentes tiers de tenants.
+
+```typescript
+export default defineConfig({
+  isolation: {
+    strategy: 'hybrid',
+    default: 'row', // tenants pequenos
+    rules: [
+      {
+        condition: async (tenantId) => {
+          const plan = await getTenantPlan(tenantId);
+          return plan === 'enterprise';
+        },
+        strategy: 'schema', // tenants enterprise
+      },
+      {
+        condition: async (tenantId) => {
+          const rows = await getTenantRowCount(tenantId);
+          return rows > 100000;
+        },
+        strategy: 'schema', // tenants grandes
+      },
+    ],
+    onPromotion: async (tenantId, from, to) => {
+      // Migrar dados de RLS para schema dedicado
+      await migrateDataToSchema(tenantId);
+      logger.info({ tenant: tenantId, from, to }, 'Tenant promoted');
+    },
+  },
+});
+```
+
+**Checklist v1.6.0:**
+- [ ] Row-Level Security (RLS)
+- [ ] Geração automática de policies
+- [ ] Database-per-tenant strategy
+- [ ] Hybrid strategy com regras
+- [ ] Migração entre estratégias
 
 ---
 
@@ -818,14 +576,14 @@ const stats = await adminQuery
 
 ## Priorização
 
-| Versão | Tema | Impacto | Esforço | ETA |
-|--------|------|---------|---------|-----|
-| v1.1.0 | Resiliência | Alto | Médio | - |
-| v1.2.0 | Segurança | Alto | Médio | - |
-| v1.3.0 | Performance | Médio | Alto | - |
-| v1.4.0 | Estratégias | Alto | Alto | - |
-| v1.5.0 | DX | Médio | Médio | - |
-| v1.6.0 | Integrações | Médio | Médio | - |
+| Versão | Tema | Impacto | Esforço | Status |
+|--------|------|---------|---------|--------|
+| v1.1.0 | Resiliência | Alto | Médio | ✅ Concluído |
+| v1.2.0 | DX | Médio | Médio | ✅ Concluído |
+| v1.3.0 | Integrações | Médio | Médio | Próxima |
+| v1.4.0 | Segurança | Alto | Médio | - |
+| v1.5.0 | Performance | Médio | Alto | - |
+| v1.6.0 | Estratégias | Alto | Alto | - |
 | v2.0.0 | Enterprise | Alto | Muito Alto | - |
 
 ---
@@ -834,14 +592,16 @@ const stats = await adminQuery
 
 | Feature | Esforço | Versão | Status |
 |---------|---------|--------|--------|
-| ~~Health check API~~ | 2h | v1.1.0 | **Concluído** |
-| ~~`getMetrics()` API~~ | 1h | v1.1.0 | **Concluído** |
-| Schema name sanitization | 1h | v1.2.0 | Pendente |
-| CLI interativo básico | 4h | v1.5.0 | Pendente |
-| Tenant clone (schema only) | 4h | v1.5.0 | Pendente |
-| ~~CLI migrationsTable config~~ | 1h | v1.0.3 | **Concluído** |
-| ~~TenantDbFactory para singletons~~ | 2h | v1.0.3 | **Concluído** |
-| ~~Debug utilities para proxies~~ | 1h | v1.0.3 | **Concluído** |
+| ~~Health check API~~ | 2h | v1.1.0 | ✅ Concluído |
+| ~~`getMetrics()` API~~ | 1h | v1.1.0 | ✅ Concluído |
+| ~~CLI interativo básico~~ | 4h | v1.2.0 | ✅ Concluído |
+| ~~Tenant seeding API~~ | 3h | v1.2.0 | ✅ Concluído |
+| ~~Schema drift detection~~ | 4h | v1.2.0 | ✅ Concluído |
+| ~~Tenant clone (schema + data + anonymize)~~ | 4h | v1.2.0 | ✅ Concluído |
+| ~~CLI migrationsTable config~~ | 1h | v1.0.3 | ✅ Concluído |
+| ~~TenantDbFactory para singletons~~ | 2h | v1.0.3 | ✅ Concluído |
+| ~~Debug utilities para proxies~~ | 1h | v1.0.3 | ✅ Concluído |
+| Schema name sanitization | 1h | v1.4.0 | Pendente |
 
 ---
 

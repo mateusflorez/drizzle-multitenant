@@ -10,7 +10,6 @@ import type {
   TenantMigrationResult,
   MigrationResults,
   TenantMigrationStatus,
-  AppliedMigration,
   CreateTenantOptions,
   DropTenantOptions,
   TenantSyncStatus,
@@ -18,8 +17,25 @@ import type {
   TenantSyncResult,
   SyncResults,
   SyncOptions,
+  SeedFunction,
+  SeedOptions,
+  TenantSeedResult,
+  SeedResults,
+  // Schema drift detection types (delegated to DriftDetector)
+  TenantSchema,
+  TenantSchemaDrift,
+  SchemaDriftStatus,
+  SchemaDriftOptions,
 } from './types.js';
 import { detectTableFormat, getFormatConfig, type DetectedFormat, type TableFormat } from './table-format.js';
+import { SchemaManager } from './schema-manager.js';
+import { DriftDetector } from './drift/drift-detector.js';
+import { Seeder } from './seed/seeder.js';
+import { SyncManager } from './sync/sync-manager.js';
+import { MigrationExecutor } from './executor/migration-executor.js';
+import { BatchExecutor } from './executor/batch-executor.js';
+import { Cloner } from './clone/cloner.js';
+import type { CloneTenantOptions, CloneTenantResult } from './clone/types.js';
 
 const DEFAULT_MIGRATIONS_TABLE = '__drizzle_migrations';
 
@@ -31,269 +47,128 @@ export class Migrator<
   TSharedSchema extends Record<string, unknown>,
 > {
   private readonly migrationsTable: string;
+  private readonly schemaManager: SchemaManager<TTenantSchema, TSharedSchema>;
+  private readonly driftDetector: DriftDetector<TTenantSchema, TSharedSchema>;
+  private readonly seeder: Seeder<TTenantSchema>;
+  private readonly syncManager: SyncManager;
+  private readonly migrationExecutor: MigrationExecutor;
+  private readonly batchExecutor: BatchExecutor;
+  private readonly cloner: Cloner;
 
   constructor(
-    private readonly tenantConfig: Config<TTenantSchema, TSharedSchema>,
+    tenantConfig: Config<TTenantSchema, TSharedSchema>,
     private readonly migratorConfig: MigratorConfig
   ) {
     this.migrationsTable = migratorConfig.migrationsTable ?? DEFAULT_MIGRATIONS_TABLE;
+    this.schemaManager = new SchemaManager(tenantConfig, this.migrationsTable);
+    this.driftDetector = new DriftDetector(tenantConfig, this.schemaManager, {
+      migrationsTable: this.migrationsTable,
+      tenantDiscovery: migratorConfig.tenantDiscovery,
+    });
+    this.seeder = new Seeder(
+      { tenantDiscovery: migratorConfig.tenantDiscovery },
+      {
+        createPool: this.schemaManager.createPool.bind(this.schemaManager),
+        schemaNameTemplate: tenantConfig.isolation.schemaNameTemplate,
+        tenantSchema: tenantConfig.schemas.tenant as TTenantSchema,
+      }
+    );
+    this.syncManager = new SyncManager(
+      {
+        tenantDiscovery: migratorConfig.tenantDiscovery,
+        migrationsFolder: migratorConfig.migrationsFolder,
+        migrationsTable: this.migrationsTable,
+      },
+      {
+        createPool: this.schemaManager.createPool.bind(this.schemaManager),
+        schemaNameTemplate: tenantConfig.isolation.schemaNameTemplate,
+        migrationsTableExists: this.schemaManager.migrationsTableExists.bind(this.schemaManager),
+        ensureMigrationsTable: this.schemaManager.ensureMigrationsTable.bind(this.schemaManager),
+        getOrDetectFormat: this.getOrDetectFormat.bind(this),
+        loadMigrations: this.loadMigrations.bind(this),
+      }
+    );
+
+    // Initialize MigrationExecutor (single tenant operations)
+    this.migrationExecutor = new MigrationExecutor(
+      { hooks: migratorConfig.hooks },
+      {
+        createPool: this.schemaManager.createPool.bind(this.schemaManager),
+        schemaNameTemplate: tenantConfig.isolation.schemaNameTemplate,
+        migrationsTableExists: this.schemaManager.migrationsTableExists.bind(this.schemaManager),
+        ensureMigrationsTable: this.schemaManager.ensureMigrationsTable.bind(this.schemaManager),
+        getOrDetectFormat: this.getOrDetectFormat.bind(this),
+        loadMigrations: this.loadMigrations.bind(this),
+      }
+    );
+
+    // Initialize BatchExecutor (multi-tenant operations)
+    this.batchExecutor = new BatchExecutor(
+      { tenantDiscovery: migratorConfig.tenantDiscovery },
+      this.migrationExecutor,
+      this.loadMigrations.bind(this)
+    );
+
+    // Initialize Cloner (tenant cloning operations)
+    this.cloner = new Cloner(
+      { migrationsTable: this.migrationsTable },
+      {
+        createPool: this.schemaManager.createPool.bind(this.schemaManager),
+        createRootPool: this.schemaManager.createRootPool.bind(this.schemaManager),
+        schemaNameTemplate: tenantConfig.isolation.schemaNameTemplate,
+        schemaExists: this.schemaManager.schemaExists.bind(this.schemaManager),
+        createSchema: this.schemaManager.createSchema.bind(this.schemaManager),
+      }
+    );
   }
 
   /**
    * Migrate all tenants in parallel
+   *
+   * Delegates to BatchExecutor for parallel migration operations.
    */
   async migrateAll(options: MigrateOptions = {}): Promise<MigrationResults> {
-    const {
-      concurrency = 10,
-      onProgress,
-      onError,
-      dryRun = false,
-    } = options;
-
-    const tenantIds = await this.migratorConfig.tenantDiscovery();
-    const migrations = await this.loadMigrations();
-
-    const results: TenantMigrationResult[] = [];
-    let aborted = false;
-
-    // Process tenants in batches
-    for (let i = 0; i < tenantIds.length && !aborted; i += concurrency) {
-      const batch = tenantIds.slice(i, i + concurrency);
-
-      const batchResults = await Promise.all(
-        batch.map(async (tenantId) => {
-          if (aborted) {
-            return this.createSkippedResult(tenantId);
-          }
-
-          try {
-            onProgress?.(tenantId, 'starting');
-            const result = await this.migrateTenant(tenantId, migrations, { dryRun, onProgress });
-            onProgress?.(tenantId, result.success ? 'completed' : 'failed');
-            return result;
-          } catch (error) {
-            onProgress?.(tenantId, 'failed');
-            const action = onError?.(tenantId, error as Error);
-            if (action === 'abort') {
-              aborted = true;
-            }
-            return this.createErrorResult(tenantId, error as Error);
-          }
-        })
-      );
-
-      results.push(...batchResults);
-    }
-
-    // Mark remaining tenants as skipped if aborted
-    if (aborted) {
-      const remaining = tenantIds.slice(results.length);
-      for (const tenantId of remaining) {
-        results.push(this.createSkippedResult(tenantId));
-      }
-    }
-
-    return this.aggregateResults(results);
+    return this.batchExecutor.migrateAll(options);
   }
 
   /**
    * Migrate a single tenant
+   *
+   * Delegates to MigrationExecutor for single tenant operations.
    */
   async migrateTenant(
     tenantId: string,
     migrations?: MigrationFile[],
     options: { dryRun?: boolean; onProgress?: MigrateOptions['onProgress'] } = {}
   ): Promise<TenantMigrationResult> {
-    const startTime = Date.now();
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-    const appliedMigrations: string[] = [];
-
-    const pool = await this.createPool(schemaName);
-
-    try {
-      await this.migratorConfig.hooks?.beforeTenant?.(tenantId);
-
-      // Detect or determine the format before creating table
-      const format = await this.getOrDetectFormat(pool, schemaName);
-
-      // Ensure migrations table exists with correct format
-      await this.ensureMigrationsTable(pool, schemaName, format);
-
-      // Load migrations if not provided
-      const allMigrations = migrations ?? await this.loadMigrations();
-
-      // Get applied migrations using format-aware query
-      const applied = await this.getAppliedMigrations(pool, schemaName, format);
-      const appliedSet = new Set(applied.map((m) => m.identifier));
-
-      // Filter pending migrations using format-aware comparison
-      const pending = allMigrations.filter(
-        (m) => !this.isMigrationApplied(m, appliedSet, format)
-      );
-
-      if (options.dryRun) {
-        return {
-          tenantId,
-          schemaName,
-          success: true,
-          appliedMigrations: pending.map((m) => m.name),
-          durationMs: Date.now() - startTime,
-          format: format.format,
-        };
-      }
-
-      // Apply pending migrations
-      for (const migration of pending) {
-        const migrationStart = Date.now();
-        options.onProgress?.(tenantId, 'migrating', migration.name);
-
-        await this.migratorConfig.hooks?.beforeMigration?.(tenantId, migration.name);
-        await this.applyMigration(pool, schemaName, migration, format);
-        await this.migratorConfig.hooks?.afterMigration?.(
-          tenantId,
-          migration.name,
-          Date.now() - migrationStart
-        );
-
-        appliedMigrations.push(migration.name);
-      }
-
-      const result: TenantMigrationResult = {
-        tenantId,
-        schemaName,
-        success: true,
-        appliedMigrations,
-        durationMs: Date.now() - startTime,
-        format: format.format,
-      };
-
-      await this.migratorConfig.hooks?.afterTenant?.(tenantId, result);
-
-      return result;
-    } catch (error) {
-      const result: TenantMigrationResult = {
-        tenantId,
-        schemaName,
-        success: false,
-        appliedMigrations,
-        error: (error as Error).message,
-        durationMs: Date.now() - startTime,
-      };
-
-      await this.migratorConfig.hooks?.afterTenant?.(tenantId, result);
-
-      return result;
-    } finally {
-      await pool.end();
-    }
+    return this.migrationExecutor.migrateTenant(tenantId, migrations, options);
   }
 
   /**
    * Migrate specific tenants
+   *
+   * Delegates to BatchExecutor for parallel migration operations.
    */
   async migrateTenants(tenantIds: string[], options: MigrateOptions = {}): Promise<MigrationResults> {
-    const migrations = await this.loadMigrations();
-    const results: TenantMigrationResult[] = [];
-
-    const { concurrency = 10, onProgress, onError } = options;
-
-    for (let i = 0; i < tenantIds.length; i += concurrency) {
-      const batch = tenantIds.slice(i, i + concurrency);
-
-      const batchResults = await Promise.all(
-        batch.map(async (tenantId) => {
-          try {
-            onProgress?.(tenantId, 'starting');
-            const result = await this.migrateTenant(tenantId, migrations, { dryRun: options.dryRun ?? false, onProgress });
-            onProgress?.(tenantId, result.success ? 'completed' : 'failed');
-            return result;
-          } catch (error) {
-            onProgress?.(tenantId, 'failed');
-            onError?.(tenantId, error as Error);
-            return this.createErrorResult(tenantId, error as Error);
-          }
-        })
-      );
-
-      results.push(...batchResults);
-    }
-
-    return this.aggregateResults(results);
+    return this.batchExecutor.migrateTenants(tenantIds, options);
   }
 
   /**
    * Get migration status for all tenants
+   *
+   * Delegates to BatchExecutor for status operations.
    */
   async getStatus(): Promise<TenantMigrationStatus[]> {
-    const tenantIds = await this.migratorConfig.tenantDiscovery();
-    const migrations = await this.loadMigrations();
-    const statuses: TenantMigrationStatus[] = [];
-
-    for (const tenantId of tenantIds) {
-      statuses.push(await this.getTenantStatus(tenantId, migrations));
-    }
-
-    return statuses;
+    return this.batchExecutor.getStatus();
   }
 
   /**
    * Get migration status for a specific tenant
+   *
+   * Delegates to MigrationExecutor for single tenant operations.
    */
   async getTenantStatus(tenantId: string, migrations?: MigrationFile[]): Promise<TenantMigrationStatus> {
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-    const pool = await this.createPool(schemaName);
-
-    try {
-      const allMigrations = migrations ?? await this.loadMigrations();
-
-      // Check if migrations table exists
-      const tableExists = await this.migrationsTableExists(pool, schemaName);
-      if (!tableExists) {
-        return {
-          tenantId,
-          schemaName,
-          appliedCount: 0,
-          pendingCount: allMigrations.length,
-          pendingMigrations: allMigrations.map((m) => m.name),
-          status: allMigrations.length > 0 ? 'behind' : 'ok',
-          format: null, // New tenant, no table yet
-        };
-      }
-
-      // Detect the table format
-      const format = await this.getOrDetectFormat(pool, schemaName);
-
-      const applied = await this.getAppliedMigrations(pool, schemaName, format);
-      const appliedSet = new Set(applied.map((m) => m.identifier));
-
-      // Use format-aware comparison
-      const pending = allMigrations.filter(
-        (m) => !this.isMigrationApplied(m, appliedSet, format)
-      );
-
-      return {
-        tenantId,
-        schemaName,
-        appliedCount: applied.length,
-        pendingCount: pending.length,
-        pendingMigrations: pending.map((m) => m.name),
-        status: pending.length > 0 ? 'behind' : 'ok',
-        format: format.format,
-      };
-    } catch (error) {
-      return {
-        tenantId,
-        schemaName,
-        appliedCount: 0,
-        pendingCount: 0,
-        pendingMigrations: [],
-        status: 'error',
-        error: (error as Error).message,
-        format: null,
-      };
-    } finally {
-      await pool.end();
-    }
+    return this.migrationExecutor.getTenantStatus(tenantId, migrations);
   }
 
   /**
@@ -301,23 +176,13 @@ export class Migrator<
    */
   async createTenant(tenantId: string, options: CreateTenantOptions = {}): Promise<void> {
     const { migrate = true } = options;
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
 
-    const pool = new Pool({
-      connectionString: this.tenantConfig.connection.url,
-      ...this.tenantConfig.connection.poolConfig,
-    });
+    // Delegate schema creation to SchemaManager
+    await this.schemaManager.createSchema(tenantId);
 
-    try {
-      // Create schema
-      await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
-
-      if (migrate) {
-        // Apply all migrations
-        await this.migrateTenant(tenantId);
-      }
-    } finally {
-      await pool.end();
+    if (migrate) {
+      // Apply all migrations
+      await this.migrateTenant(tenantId);
     }
   }
 
@@ -325,493 +190,177 @@ export class Migrator<
    * Drop a tenant schema
    */
   async dropTenant(tenantId: string, options: DropTenantOptions = {}): Promise<void> {
-    const { cascade = true } = options;
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-
-    const pool = new Pool({
-      connectionString: this.tenantConfig.connection.url,
-      ...this.tenantConfig.connection.poolConfig,
-    });
-
-    try {
-      const cascadeSql = cascade ? 'CASCADE' : 'RESTRICT';
-      await pool.query(`DROP SCHEMA IF EXISTS "${schemaName}" ${cascadeSql}`);
-    } finally {
-      await pool.end();
-    }
+    // Delegate to SchemaManager
+    await this.schemaManager.dropSchema(tenantId, options);
   }
 
   /**
    * Check if a tenant schema exists
    */
   async tenantExists(tenantId: string): Promise<boolean> {
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
+    // Delegate to SchemaManager
+    return this.schemaManager.schemaExists(tenantId);
+  }
 
-    const pool = new Pool({
-      connectionString: this.tenantConfig.connection.url,
-      ...this.tenantConfig.connection.poolConfig,
-    });
-
-    try {
-      const result = await pool.query(
-        `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
-        [schemaName]
-      );
-      return result.rowCount !== null && result.rowCount > 0;
-    } finally {
-      await pool.end();
-    }
+  /**
+   * Clone a tenant to a new tenant
+   *
+   * By default, clones only schema structure. Use includeData to copy data.
+   *
+   * @example
+   * ```typescript
+   * // Schema-only clone
+   * await migrator.cloneTenant('production', 'dev');
+   *
+   * // Clone with data
+   * await migrator.cloneTenant('production', 'dev', { includeData: true });
+   *
+   * // Clone with anonymization
+   * await migrator.cloneTenant('production', 'dev', {
+   *   includeData: true,
+   *   anonymize: {
+   *     enabled: true,
+   *     rules: {
+   *       users: { email: null, phone: null },
+   *     },
+   *   },
+   * });
+   * ```
+   */
+  async cloneTenant(
+    sourceTenantId: string,
+    targetTenantId: string,
+    options: CloneTenantOptions = {}
+  ): Promise<CloneTenantResult> {
+    return this.cloner.cloneTenant(sourceTenantId, targetTenantId, options);
   }
 
   /**
    * Mark migrations as applied without executing SQL
    * Useful for syncing tracking state with already-applied migrations
+   *
+   * Delegates to MigrationExecutor for single tenant operations.
    */
   async markAsApplied(
     tenantId: string,
     options: { onProgress?: MigrateOptions['onProgress'] } = {}
   ): Promise<TenantMigrationResult> {
-    const startTime = Date.now();
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-    const markedMigrations: string[] = [];
-
-    const pool = await this.createPool(schemaName);
-
-    try {
-      await this.migratorConfig.hooks?.beforeTenant?.(tenantId);
-
-      // Detect or determine the format before creating table
-      const format = await this.getOrDetectFormat(pool, schemaName);
-
-      // Ensure migrations table exists with correct format
-      await this.ensureMigrationsTable(pool, schemaName, format);
-
-      // Load all migrations
-      const allMigrations = await this.loadMigrations();
-
-      // Get applied migrations
-      const applied = await this.getAppliedMigrations(pool, schemaName, format);
-      const appliedSet = new Set(applied.map((m) => m.identifier));
-
-      // Filter pending migrations
-      const pending = allMigrations.filter(
-        (m) => !this.isMigrationApplied(m, appliedSet, format)
-      );
-
-      // Mark each pending migration as applied (without executing SQL)
-      for (const migration of pending) {
-        const migrationStart = Date.now();
-        options.onProgress?.(tenantId, 'migrating', migration.name);
-
-        await this.migratorConfig.hooks?.beforeMigration?.(tenantId, migration.name);
-        await this.recordMigration(pool, schemaName, migration, format);
-        await this.migratorConfig.hooks?.afterMigration?.(
-          tenantId,
-          migration.name,
-          Date.now() - migrationStart
-        );
-
-        markedMigrations.push(migration.name);
-      }
-
-      const result: TenantMigrationResult = {
-        tenantId,
-        schemaName,
-        success: true,
-        appliedMigrations: markedMigrations,
-        durationMs: Date.now() - startTime,
-        format: format.format,
-      };
-
-      await this.migratorConfig.hooks?.afterTenant?.(tenantId, result);
-
-      return result;
-    } catch (error) {
-      const result: TenantMigrationResult = {
-        tenantId,
-        schemaName,
-        success: false,
-        appliedMigrations: markedMigrations,
-        error: (error as Error).message,
-        durationMs: Date.now() - startTime,
-      };
-
-      await this.migratorConfig.hooks?.afterTenant?.(tenantId, result);
-
-      return result;
-    } finally {
-      await pool.end();
-    }
+    return this.migrationExecutor.markAsApplied(tenantId, options);
   }
 
   /**
    * Mark migrations as applied for all tenants without executing SQL
    * Useful for syncing tracking state with already-applied migrations
+   *
+   * Delegates to BatchExecutor for parallel operations.
    */
   async markAllAsApplied(options: MigrateOptions = {}): Promise<MigrationResults> {
-    const {
-      concurrency = 10,
-      onProgress,
-      onError,
-    } = options;
-
-    const tenantIds = await this.migratorConfig.tenantDiscovery();
-    const results: TenantMigrationResult[] = [];
-    let aborted = false;
-
-    // Process tenants in batches
-    for (let i = 0; i < tenantIds.length && !aborted; i += concurrency) {
-      const batch = tenantIds.slice(i, i + concurrency);
-
-      const batchResults = await Promise.all(
-        batch.map(async (tenantId) => {
-          if (aborted) {
-            return this.createSkippedResult(tenantId);
-          }
-
-          try {
-            onProgress?.(tenantId, 'starting');
-            const result = await this.markAsApplied(tenantId, { onProgress });
-            onProgress?.(tenantId, result.success ? 'completed' : 'failed');
-            return result;
-          } catch (error) {
-            onProgress?.(tenantId, 'failed');
-            const action = onError?.(tenantId, error as Error);
-            if (action === 'abort') {
-              aborted = true;
-            }
-            return this.createErrorResult(tenantId, error as Error);
-          }
-        })
-      );
-
-      results.push(...batchResults);
-    }
-
-    // Mark remaining tenants as skipped if aborted
-    if (aborted) {
-      const remaining = tenantIds.slice(results.length);
-      for (const tenantId of remaining) {
-        results.push(this.createSkippedResult(tenantId));
-      }
-    }
-
-    return this.aggregateResults(results);
+    return this.batchExecutor.markAllAsApplied(options);
   }
+
+  // ============================================================================
+  // Sync Methods (delegated to SyncManager)
+  // ============================================================================
 
   /**
    * Get sync status for all tenants
    * Detects divergences between migrations on disk and tracking in database
    */
   async getSyncStatus(): Promise<SyncStatus> {
-    const tenantIds = await this.migratorConfig.tenantDiscovery();
-    const migrations = await this.loadMigrations();
-    const statuses: TenantSyncStatus[] = [];
-
-    for (const tenantId of tenantIds) {
-      statuses.push(await this.getTenantSyncStatus(tenantId, migrations));
-    }
-
-    return {
-      total: statuses.length,
-      inSync: statuses.filter((s) => s.inSync && !s.error).length,
-      outOfSync: statuses.filter((s) => !s.inSync && !s.error).length,
-      error: statuses.filter((s) => !!s.error).length,
-      details: statuses,
-    };
+    return this.syncManager.getSyncStatus();
   }
 
   /**
    * Get sync status for a specific tenant
    */
   async getTenantSyncStatus(tenantId: string, migrations?: MigrationFile[]): Promise<TenantSyncStatus> {
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-    const pool = await this.createPool(schemaName);
-
-    try {
-      const allMigrations = migrations ?? await this.loadMigrations();
-      const migrationNames = new Set(allMigrations.map((m) => m.name));
-      const migrationHashes = new Set(allMigrations.map((m) => m.hash));
-
-      // Check if migrations table exists
-      const tableExists = await this.migrationsTableExists(pool, schemaName);
-      if (!tableExists) {
-        return {
-          tenantId,
-          schemaName,
-          missing: allMigrations.map((m) => m.name),
-          orphans: [],
-          inSync: allMigrations.length === 0,
-          format: null,
-        };
-      }
-
-      // Detect the table format
-      const format = await this.getOrDetectFormat(pool, schemaName);
-      const applied = await this.getAppliedMigrations(pool, schemaName, format);
-
-      // Find missing migrations (in disk but not in database)
-      const appliedIdentifiers = new Set(applied.map((m) => m.identifier));
-      const missing = allMigrations
-        .filter((m) => !this.isMigrationApplied(m, appliedIdentifiers, format))
-        .map((m) => m.name);
-
-      // Find orphan records (in database but not in disk)
-      const orphans = applied
-        .filter((m) => {
-          if (format.columns.identifier === 'name') {
-            return !migrationNames.has(m.identifier);
-          }
-          // For hash-based formats, check both hash and name
-          return !migrationHashes.has(m.identifier) && !migrationNames.has(m.identifier);
-        })
-        .map((m) => m.identifier);
-
-      return {
-        tenantId,
-        schemaName,
-        missing,
-        orphans,
-        inSync: missing.length === 0 && orphans.length === 0,
-        format: format.format,
-      };
-    } catch (error) {
-      return {
-        tenantId,
-        schemaName,
-        missing: [],
-        orphans: [],
-        inSync: false,
-        format: null,
-        error: (error as Error).message,
-      };
-    } finally {
-      await pool.end();
-    }
+    return this.syncManager.getTenantSyncStatus(tenantId, migrations);
   }
 
   /**
    * Mark missing migrations as applied for a tenant
    */
   async markMissing(tenantId: string): Promise<TenantSyncResult> {
-    const startTime = Date.now();
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-    const markedMigrations: string[] = [];
-
-    const pool = await this.createPool(schemaName);
-
-    try {
-      const syncStatus = await this.getTenantSyncStatus(tenantId);
-
-      if (syncStatus.error) {
-        return {
-          tenantId,
-          schemaName,
-          success: false,
-          markedMigrations: [],
-          removedOrphans: [],
-          error: syncStatus.error,
-          durationMs: Date.now() - startTime,
-        };
-      }
-
-      if (syncStatus.missing.length === 0) {
-        return {
-          tenantId,
-          schemaName,
-          success: true,
-          markedMigrations: [],
-          removedOrphans: [],
-          durationMs: Date.now() - startTime,
-        };
-      }
-
-      const format = await this.getOrDetectFormat(pool, schemaName);
-      await this.ensureMigrationsTable(pool, schemaName, format);
-
-      const allMigrations = await this.loadMigrations();
-      const missingSet = new Set(syncStatus.missing);
-
-      for (const migration of allMigrations) {
-        if (missingSet.has(migration.name)) {
-          await this.recordMigration(pool, schemaName, migration, format);
-          markedMigrations.push(migration.name);
-        }
-      }
-
-      return {
-        tenantId,
-        schemaName,
-        success: true,
-        markedMigrations,
-        removedOrphans: [],
-        durationMs: Date.now() - startTime,
-      };
-    } catch (error) {
-      return {
-        tenantId,
-        schemaName,
-        success: false,
-        markedMigrations,
-        removedOrphans: [],
-        error: (error as Error).message,
-        durationMs: Date.now() - startTime,
-      };
-    } finally {
-      await pool.end();
-    }
+    return this.syncManager.markMissing(tenantId);
   }
 
   /**
    * Mark missing migrations as applied for all tenants
    */
   async markAllMissing(options: SyncOptions = {}): Promise<SyncResults> {
-    const { concurrency = 10, onProgress, onError } = options;
-
-    const tenantIds = await this.migratorConfig.tenantDiscovery();
-    const results: TenantSyncResult[] = [];
-    let aborted = false;
-
-    for (let i = 0; i < tenantIds.length && !aborted; i += concurrency) {
-      const batch = tenantIds.slice(i, i + concurrency);
-
-      const batchResults = await Promise.all(
-        batch.map(async (tenantId) => {
-          if (aborted) {
-            return this.createSkippedSyncResult(tenantId);
-          }
-
-          try {
-            onProgress?.(tenantId, 'starting');
-            const result = await this.markMissing(tenantId);
-            onProgress?.(tenantId, result.success ? 'completed' : 'failed');
-            return result;
-          } catch (error) {
-            onProgress?.(tenantId, 'failed');
-            const action = onError?.(tenantId, error as Error);
-            if (action === 'abort') {
-              aborted = true;
-            }
-            return this.createErrorSyncResult(tenantId, error as Error);
-          }
-        })
-      );
-
-      results.push(...batchResults);
-    }
-
-    return this.aggregateSyncResults(results);
+    return this.syncManager.markAllMissing(options);
   }
 
   /**
    * Remove orphan migration records for a tenant
    */
   async cleanOrphans(tenantId: string): Promise<TenantSyncResult> {
-    const startTime = Date.now();
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-    const removedOrphans: string[] = [];
-
-    const pool = await this.createPool(schemaName);
-
-    try {
-      const syncStatus = await this.getTenantSyncStatus(tenantId);
-
-      if (syncStatus.error) {
-        return {
-          tenantId,
-          schemaName,
-          success: false,
-          markedMigrations: [],
-          removedOrphans: [],
-          error: syncStatus.error,
-          durationMs: Date.now() - startTime,
-        };
-      }
-
-      if (syncStatus.orphans.length === 0) {
-        return {
-          tenantId,
-          schemaName,
-          success: true,
-          markedMigrations: [],
-          removedOrphans: [],
-          durationMs: Date.now() - startTime,
-        };
-      }
-
-      const format = await this.getOrDetectFormat(pool, schemaName);
-      const identifierColumn = format.columns.identifier;
-
-      for (const orphan of syncStatus.orphans) {
-        await pool.query(
-          `DELETE FROM "${schemaName}"."${format.tableName}" WHERE "${identifierColumn}" = $1`,
-          [orphan]
-        );
-        removedOrphans.push(orphan);
-      }
-
-      return {
-        tenantId,
-        schemaName,
-        success: true,
-        markedMigrations: [],
-        removedOrphans,
-        durationMs: Date.now() - startTime,
-      };
-    } catch (error) {
-      return {
-        tenantId,
-        schemaName,
-        success: false,
-        markedMigrations: [],
-        removedOrphans,
-        error: (error as Error).message,
-        durationMs: Date.now() - startTime,
-      };
-    } finally {
-      await pool.end();
-    }
+    return this.syncManager.cleanOrphans(tenantId);
   }
 
   /**
    * Remove orphan migration records for all tenants
    */
   async cleanAllOrphans(options: SyncOptions = {}): Promise<SyncResults> {
-    const { concurrency = 10, onProgress, onError } = options;
+    return this.syncManager.cleanAllOrphans(options);
+  }
 
-    const tenantIds = await this.migratorConfig.tenantDiscovery();
-    const results: TenantSyncResult[] = [];
-    let aborted = false;
+  // ============================================================================
+  // Seeding Methods (delegated to Seeder)
+  // ============================================================================
 
-    for (let i = 0; i < tenantIds.length && !aborted; i += concurrency) {
-      const batch = tenantIds.slice(i, i + concurrency);
+  /**
+   * Seed a single tenant with initial data
+   *
+   * @example
+   * ```typescript
+   * const seed: SeedFunction = async (db, tenantId) => {
+   *   await db.insert(roles).values([
+   *     { name: 'admin', permissions: ['*'] },
+   *     { name: 'user', permissions: ['read'] },
+   *   ]);
+   * };
+   *
+   * await migrator.seedTenant('tenant-123', seed);
+   * ```
+   */
+  async seedTenant(
+    tenantId: string,
+    seedFn: SeedFunction<TTenantSchema>
+  ): Promise<TenantSeedResult> {
+    return this.seeder.seedTenant(tenantId, seedFn);
+  }
 
-      const batchResults = await Promise.all(
-        batch.map(async (tenantId) => {
-          if (aborted) {
-            return this.createSkippedSyncResult(tenantId);
-          }
+  /**
+   * Seed all tenants with initial data in parallel
+   *
+   * @example
+   * ```typescript
+   * const seed: SeedFunction = async (db, tenantId) => {
+   *   await db.insert(roles).values([
+   *     { name: 'admin', permissions: ['*'] },
+   *   ]);
+   * };
+   *
+   * await migrator.seedAll(seed, { concurrency: 10 });
+   * ```
+   */
+  async seedAll(
+    seedFn: SeedFunction<TTenantSchema>,
+    options: SeedOptions = {}
+  ): Promise<SeedResults> {
+    return this.seeder.seedAll(seedFn, options);
+  }
 
-          try {
-            onProgress?.(tenantId, 'starting');
-            const result = await this.cleanOrphans(tenantId);
-            onProgress?.(tenantId, result.success ? 'completed' : 'failed');
-            return result;
-          } catch (error) {
-            onProgress?.(tenantId, 'failed');
-            const action = onError?.(tenantId, error as Error);
-            if (action === 'abort') {
-              aborted = true;
-            }
-            return this.createErrorSyncResult(tenantId, error as Error);
-          }
-        })
-      );
-
-      results.push(...batchResults);
-    }
-
-    return this.aggregateSyncResults(results);
+  /**
+   * Seed specific tenants with initial data
+   */
+  async seedTenants(
+    tenantIds: string[],
+    seedFn: SeedFunction<TTenantSchema>,
+    options: SeedOptions = {}
+  ): Promise<SeedResults> {
+    return this.seeder.seedTenants(tenantIds, seedFn, options);
   }
 
   /**
@@ -849,111 +398,10 @@ export class Migrator<
   }
 
   /**
-   * Create a pool for a specific schema
-   */
-  private async createPool(schemaName: string): Promise<Pool> {
-    return new Pool({
-      connectionString: this.tenantConfig.connection.url,
-      ...this.tenantConfig.connection.poolConfig,
-      options: `-c search_path="${schemaName}",public`,
-    });
-  }
-
-  /**
-   * Ensure migrations table exists with the correct format
-   */
-  private async ensureMigrationsTable(
-    pool: Pool,
-    schemaName: string,
-    format: DetectedFormat
-  ): Promise<void> {
-    const { identifier, timestamp, timestampType } = format.columns;
-
-    // Build column definitions based on format
-    const identifierCol = identifier === 'name'
-      ? 'name VARCHAR(255) NOT NULL UNIQUE'
-      : 'hash TEXT NOT NULL';
-
-    const timestampCol = timestampType === 'bigint'
-      ? `${timestamp} BIGINT NOT NULL`
-      : `${timestamp} TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`;
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS "${schemaName}"."${format.tableName}" (
-        id SERIAL PRIMARY KEY,
-        ${identifierCol},
-        ${timestampCol}
-      )
-    `);
-  }
-
-  /**
-   * Check if migrations table exists
-   */
-  private async migrationsTableExists(pool: Pool, schemaName: string): Promise<boolean> {
-    const result = await pool.query(
-      `SELECT 1 FROM information_schema.tables
-       WHERE table_schema = $1 AND table_name = $2`,
-      [schemaName, this.migrationsTable]
-    );
-    return result.rowCount !== null && result.rowCount > 0;
-  }
-
-  /**
-   * Get applied migrations for a schema
-   */
-  private async getAppliedMigrations(
-    pool: Pool,
-    schemaName: string,
-    format: DetectedFormat
-  ): Promise<AppliedMigration[]> {
-    const identifierColumn = format.columns.identifier;
-    const timestampColumn = format.columns.timestamp;
-
-    const result = await pool.query<{ id: number; identifier: string; applied_at: string | number }>(
-      `SELECT id, "${identifierColumn}" as identifier, "${timestampColumn}" as applied_at
-       FROM "${schemaName}"."${format.tableName}"
-       ORDER BY id`
-    );
-
-    return result.rows.map((row) => {
-      // Convert timestamp based on format
-      const appliedAt = format.columns.timestampType === 'bigint'
-        ? new Date(Number(row.applied_at))
-        : new Date(row.applied_at);
-
-      return {
-        id: row.id,
-        identifier: row.identifier,
-        // Set name or hash based on format
-        ...(format.columns.identifier === 'name'
-          ? { name: row.identifier }
-          : { hash: row.identifier }),
-        appliedAt,
-      };
-    });
-  }
-
-  /**
-   * Check if a migration has been applied
-   */
-  private isMigrationApplied(
-    migration: MigrationFile,
-    appliedIdentifiers: Set<string>,
-    format: DetectedFormat
-  ): boolean {
-    if (format.columns.identifier === 'name') {
-      return appliedIdentifiers.has(migration.name);
-    }
-
-    // Hash-based: check both hash AND name for backwards compatibility
-    // This allows migration from name-based to hash-based tracking
-    return appliedIdentifiers.has(migration.hash) || appliedIdentifiers.has(migration.name);
-  }
-
-  /**
    * Get or detect the format for a schema
    * Returns the configured format or auto-detects from existing table
+   *
+   * Note: This method is shared with SyncManager and MigrationExecutor via dependency injection.
    */
   private async getOrDetectFormat(
     pool: Pool,
@@ -978,143 +426,55 @@ export class Migrator<
     return getFormatConfig(defaultFormat, this.migrationsTable);
   }
 
+  // ============================================================================
+  // Schema Drift Detection Methods (delegated to DriftDetector)
+  // ============================================================================
+
   /**
-   * Apply a migration to a schema
+   * Detect schema drift across all tenants
+   * Compares each tenant's schema against a reference tenant (first tenant by default)
+   *
+   * @example
+   * ```typescript
+   * const drift = await migrator.getSchemaDrift();
+   * if (drift.withDrift > 0) {
+   *   console.log('Schema drift detected!');
+   *   for (const tenant of drift.details) {
+   *     if (tenant.hasDrift) {
+   *       console.log(`Tenant ${tenant.tenantId} has drift:`);
+   *       for (const table of tenant.tables) {
+   *         for (const col of table.columns) {
+   *           console.log(`  - ${table.table}.${col.column}: ${col.description}`);
+   *         }
+   *       }
+   *     }
+   *   }
+   * }
+   * ```
    */
-  private async applyMigration(
-    pool: Pool,
-    schemaName: string,
-    migration: MigrationFile,
-    format: DetectedFormat
-  ): Promise<void> {
-    const client = await pool.connect();
-
-    try {
-      await client.query('BEGIN');
-
-      // Execute migration SQL
-      await client.query(migration.sql);
-
-      // Record migration using format-aware insert
-      const { identifier, timestamp, timestampType } = format.columns;
-      const identifierValue = identifier === 'name' ? migration.name : migration.hash;
-      const timestampValue = timestampType === 'bigint' ? Date.now() : new Date();
-
-      await client.query(
-        `INSERT INTO "${schemaName}"."${format.tableName}" ("${identifier}", "${timestamp}") VALUES ($1, $2)`,
-        [identifierValue, timestampValue]
-      );
-
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+  async getSchemaDrift(options: SchemaDriftOptions = {}): Promise<SchemaDriftStatus> {
+    return this.driftDetector.detectDrift(options);
   }
 
   /**
-   * Record a migration as applied without executing SQL
-   * Used by markAsApplied to sync tracking state
+   * Get schema drift for a specific tenant compared to a reference
    */
-  private async recordMigration(
-    pool: Pool,
-    schemaName: string,
-    migration: MigrationFile,
-    format: DetectedFormat
-  ): Promise<void> {
-    const { identifier, timestamp, timestampType } = format.columns;
-    const identifierValue = identifier === 'name' ? migration.name : migration.hash;
-    const timestampValue = timestampType === 'bigint' ? Date.now() : new Date();
-
-    await pool.query(
-      `INSERT INTO "${schemaName}"."${format.tableName}" ("${identifier}", "${timestamp}") VALUES ($1, $2)`,
-      [identifierValue, timestampValue]
-    );
+  async getTenantSchemaDrift(
+    tenantId: string,
+    referenceTenantId: string,
+    options: Pick<SchemaDriftOptions, 'includeIndexes' | 'includeConstraints' | 'excludeTables'> = {}
+  ): Promise<TenantSchemaDrift> {
+    return this.driftDetector.compareTenant(tenantId, referenceTenantId, options);
   }
 
   /**
-   * Create a skipped result
+   * Introspect the schema of a tenant
    */
-  private createSkippedResult(tenantId: string): TenantMigrationResult {
-    return {
-      tenantId,
-      schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
-      success: false,
-      appliedMigrations: [],
-      error: 'Skipped due to abort',
-      durationMs: 0,
-    };
-  }
-
-  /**
-   * Create an error result
-   */
-  private createErrorResult(tenantId: string, error: Error): TenantMigrationResult {
-    return {
-      tenantId,
-      schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
-      success: false,
-      appliedMigrations: [],
-      error: error.message,
-      durationMs: 0,
-    };
-  }
-
-  /**
-   * Aggregate migration results
-   */
-  private aggregateResults(results: TenantMigrationResult[]): MigrationResults {
-    return {
-      total: results.length,
-      succeeded: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success && r.error !== 'Skipped due to abort').length,
-      skipped: results.filter((r) => r.error === 'Skipped due to abort').length,
-      details: results,
-    };
-  }
-
-  /**
-   * Create a skipped sync result
-   */
-  private createSkippedSyncResult(tenantId: string): TenantSyncResult {
-    return {
-      tenantId,
-      schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
-      success: false,
-      markedMigrations: [],
-      removedOrphans: [],
-      error: 'Skipped due to abort',
-      durationMs: 0,
-    };
-  }
-
-  /**
-   * Create an error sync result
-   */
-  private createErrorSyncResult(tenantId: string, error: Error): TenantSyncResult {
-    return {
-      tenantId,
-      schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
-      success: false,
-      markedMigrations: [],
-      removedOrphans: [],
-      error: error.message,
-      durationMs: 0,
-    };
-  }
-
-  /**
-   * Aggregate sync results
-   */
-  private aggregateSyncResults(results: TenantSyncResult[]): SyncResults {
-    return {
-      total: results.length,
-      succeeded: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
-      details: results,
-    };
+  async introspectTenantSchema(
+    tenantId: string,
+    options: { includeIndexes?: boolean; includeConstraints?: boolean; excludeTables?: string[] } = {}
+  ): Promise<TenantSchema | null> {
+    return this.driftDetector.introspectSchema(tenantId, options);
   }
 }
 

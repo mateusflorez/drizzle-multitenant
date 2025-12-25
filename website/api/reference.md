@@ -35,8 +35,8 @@ const tenants = createTenantManager(config);
 | `getRetryConfig()` | Get current retry configuration object |
 | `evictPool(tenantId)` | Force evict a pool |
 | `warmup(tenantIds, options?)` | Pre-warm pools for specified tenants |
-| `healthCheck(options?)` | Check health of all pools and connections |
-| `getMetrics()` | Get current metrics for all pools |
+| `healthCheck(options?)` | Check health of all pools |
+| `getMetrics()` | Get pool metrics for monitoring |
 | `dispose()` | Cleanup all pools and connections |
 
 ### Method Details
@@ -66,14 +66,61 @@ const retryConfig = tenants.getRetryConfig();
 //   backoffMultiplier: 2,
 //   jitter: true
 // }
+```
 
-// Use for health checks
-app.get('/health', (req, res) => {
-  res.json({
-    pools: tenants.getPoolCount(),
-    retryConfig: tenants.getRetryConfig(),
-  });
+#### healthCheck(options?)
+
+Check the health of all pools:
+
+```typescript
+const health = await tenants.healthCheck();
+// {
+//   healthy: true,
+//   pools: [
+//     { tenantId: 'abc', status: 'ok', totalConnections: 5, idleConnections: 3 },
+//     { tenantId: 'def', status: 'degraded', totalConnections: 5, waitingRequests: 2 },
+//   ],
+//   sharedDb: { status: 'ok', responseTimeMs: 12 },
+//   totalPools: 2,
+//   degradedPools: 0,
+//   unhealthyPools: 0,
+//   timestamp: '2024-01-15T10:30:00Z',
+//   durationMs: 45
+// }
+
+// With options
+const health = await tenants.healthCheck({
+  tenantIds: ['tenant-1', 'tenant-2'],
+  ping: true,
+  pingTimeoutMs: 3000,
+  includeShared: true,
 });
+
+// Load balancer endpoint
+app.get('/health', async (req, res) => {
+  const health = await tenants.healthCheck();
+  res.status(health.healthy ? 200 : 503).json(health);
+});
+```
+
+#### getMetrics()
+
+Get pool metrics for monitoring:
+
+```typescript
+const metrics = tenants.getMetrics();
+// {
+//   pools: {
+//     total: 15,
+//     maxPools: 50,
+//     tenants: [
+//       { tenantId: 'abc', schemaName: 'tenant_abc', connections: { total: 10, idle: 7, waiting: 0 } },
+//       { tenantId: 'def', schemaName: 'tenant_def', connections: { total: 10, idle: 3, waiting: 2 } },
+//     ],
+//   },
+//   shared: { connections: { total: 10, idle: 8, waiting: 0 } },
+//   timestamp: '2024-01-15T10:30:00Z',
+// }
 ```
 
 ## TenantContext
@@ -183,6 +230,69 @@ interface WarmupResult {
   alreadyWarm: number;
   durationMs: number;
   details: TenantWarmupResult[];
+}
+```
+
+### HealthCheckOptions
+
+```typescript
+interface HealthCheckOptions {
+  tenantIds?: string[];    // Check specific tenants only
+  ping?: boolean;          // Actually ping the database (default: true)
+  pingTimeoutMs?: number;  // Timeout for ping (default: 5000)
+  includeShared?: boolean; // Include shared database (default: true)
+}
+```
+
+### HealthCheckResult
+
+```typescript
+interface HealthCheckResult {
+  healthy: boolean;
+  pools: PoolHealthStatus[];
+  sharedDb?: { status: 'ok' | 'degraded' | 'unhealthy'; responseTimeMs?: number };
+  totalPools: number;
+  degradedPools: number;
+  unhealthyPools: number;
+  timestamp: string;
+  durationMs: number;
+}
+
+interface PoolHealthStatus {
+  tenantId: string;
+  status: 'ok' | 'degraded' | 'unhealthy';
+  totalConnections: number;
+  idleConnections: number;
+  waitingRequests?: number;
+  error?: string;
+}
+```
+
+### Metrics
+
+```typescript
+interface Metrics {
+  pools: {
+    total: number;
+    maxPools: number;
+    tenants: TenantPoolMetrics[];
+  };
+  shared?: {
+    connections: ConnectionMetrics;
+  };
+  timestamp: string;
+}
+
+interface TenantPoolMetrics {
+  tenantId: string;
+  schemaName: string;
+  connections: ConnectionMetrics;
+}
+
+interface ConnectionMetrics {
+  total: number;
+  idle: number;
+  waiting: number;
 }
 ```
 

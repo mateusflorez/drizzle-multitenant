@@ -1,6 +1,5 @@
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { LRUCache } from 'lru-cache';
 import type {
   Config,
   PoolEntry,
@@ -12,14 +11,14 @@ import type {
   RetryConfig,
   HealthCheckOptions,
   HealthCheckResult,
-  PoolHealth,
-  PoolHealthStatus,
   MetricsResult,
   TenantPoolMetrics,
 } from './types.js';
 import { DEFAULT_CONFIG as defaults } from './types.js';
 import { createDebugLogger, DebugLogger } from './debug.js';
-import { withRetry, isRetryableError } from './retry.js';
+import { PoolCache } from './pool/cache/index.js';
+import { RetryHandler } from './pool/retry/index.js';
+import { HealthChecker } from './pool/health/index.js';
 
 /**
  * Pool manager that handles tenant database connections with LRU eviction
@@ -28,7 +27,7 @@ export class PoolManager<
   TTenantSchema extends Record<string, unknown>,
   TSharedSchema extends Record<string, unknown>,
 > {
-  private readonly pools: LRUCache<string, PoolEntry<TTenantSchema>>;
+  private readonly poolCache: PoolCache<TTenantSchema>;
   private readonly tenantIdBySchema: Map<string, string> = new Map();
   private readonly pendingConnections: Map<string, Promise<PoolEntry<TTenantSchema>>> = new Map();
   private sharedPool: Pool | null = null;
@@ -37,31 +36,33 @@ export class PoolManager<
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
   private readonly debugLogger: DebugLogger;
-  private readonly retryConfig: Required<RetryConfig>;
+  private readonly retryHandler: RetryHandler;
+  private readonly healthChecker: HealthChecker<TTenantSchema>;
 
   constructor(private readonly config: Config<TTenantSchema, TSharedSchema>) {
     const maxPools = config.isolation.maxPools ?? defaults.maxPools;
+    const poolTtlMs = config.isolation.poolTtlMs ?? defaults.poolTtlMs;
 
     this.debugLogger = createDebugLogger(config.debug);
 
-    // Initialize retry config with defaults
-    const userRetry = config.connection.retry ?? {};
-    this.retryConfig = {
-      maxAttempts: userRetry.maxAttempts ?? defaults.retry.maxAttempts,
-      initialDelayMs: userRetry.initialDelayMs ?? defaults.retry.initialDelayMs,
-      maxDelayMs: userRetry.maxDelayMs ?? defaults.retry.maxDelayMs,
-      backoffMultiplier: userRetry.backoffMultiplier ?? defaults.retry.backoffMultiplier,
-      jitter: userRetry.jitter ?? defaults.retry.jitter,
-      isRetryable: userRetry.isRetryable ?? isRetryableError,
-      onRetry: userRetry.onRetry,
-    };
+    // Initialize retry handler with config
+    this.retryHandler = new RetryHandler(config.connection.retry);
 
-    this.pools = new LRUCache<string, PoolEntry<TTenantSchema>>({
-      max: maxPools,
-      dispose: (entry, key) => {
-        this.disposePoolEntry(entry, key);
+    this.poolCache = new PoolCache<TTenantSchema>({
+      maxPools,
+      poolTtlMs,
+      onDispose: (schemaName, entry) => {
+        this.disposePoolEntry(entry, schemaName);
       },
-      noDisposeOnSet: true,
+    });
+
+    // Initialize health checker with dependencies
+    this.healthChecker = new HealthChecker<TTenantSchema>({
+      getPoolEntries: () => this.poolCache.entries(),
+      getTenantIdBySchema: (schemaName) => this.tenantIdBySchema.get(schemaName),
+      getPoolEntry: (schemaName) => this.poolCache.get(schemaName),
+      getSchemaName: (tenantId) => this.config.isolation.schemaNameTemplate(tenantId),
+      getSharedPool: () => this.sharedPool,
     });
   }
 
@@ -72,11 +73,11 @@ export class PoolManager<
     this.ensureNotDisposed();
 
     const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
-    let entry = this.pools.get(schemaName);
+    let entry = this.poolCache.get(schemaName);
 
     if (!entry) {
       entry = this.createPoolEntry(tenantId, schemaName);
-      this.pools.set(schemaName, entry);
+      this.poolCache.set(schemaName, entry);
       this.tenantIdBySchema.set(schemaName, tenantId);
 
       // Log pool creation
@@ -86,7 +87,7 @@ export class PoolManager<
       void this.config.hooks?.onPoolCreated?.(tenantId);
     }
 
-    entry.lastAccess = Date.now();
+    this.poolCache.touch(schemaName);
     return entry.db;
   }
 
@@ -109,10 +110,10 @@ export class PoolManager<
     this.ensureNotDisposed();
 
     const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
-    let entry = this.pools.get(schemaName);
+    let entry = this.poolCache.get(schemaName);
 
     if (entry) {
-      entry.lastAccess = Date.now();
+      this.poolCache.touch(schemaName);
       return entry.db;
     }
 
@@ -120,7 +121,7 @@ export class PoolManager<
     const pending = this.pendingConnections.get(schemaName);
     if (pending) {
       entry = await pending;
-      entry.lastAccess = Date.now();
+      this.poolCache.touch(schemaName);
       return entry.db;
     }
 
@@ -130,7 +131,7 @@ export class PoolManager<
 
     try {
       entry = await connectionPromise;
-      this.pools.set(schemaName, entry);
+      this.poolCache.set(schemaName, entry);
       this.tenantIdBySchema.set(schemaName, tenantId);
 
       // Log pool creation
@@ -139,7 +140,7 @@ export class PoolManager<
       // Fire hook asynchronously
       void this.config.hooks?.onPoolCreated?.(tenantId);
 
-      entry.lastAccess = Date.now();
+      this.poolCache.touch(schemaName);
       return entry.db;
     } finally {
       this.pendingConnections.delete(schemaName);
@@ -153,9 +154,10 @@ export class PoolManager<
     tenantId: string,
     schemaName: string
   ): Promise<PoolEntry<TTenantSchema>> {
-    const maxAttempts = this.retryConfig.maxAttempts;
+    const retryConfig = this.retryHandler.getConfig();
+    const maxAttempts = retryConfig.maxAttempts;
 
-    const result = await withRetry(
+    const result = await this.retryHandler.withRetry(
       async () => {
         // Create pool entry
         const entry = this.createPoolEntry(tenantId, schemaName);
@@ -175,13 +177,12 @@ export class PoolManager<
         }
       },
       {
-        ...this.retryConfig,
         onRetry: (attempt, error, delayMs) => {
           // Log retry event
           this.debugLogger.logConnectionRetry(tenantId, attempt, maxAttempts, error, delayMs);
 
           // Call user-provided onRetry hook
-          this.retryConfig.onRetry?.(attempt, error, delayMs);
+          retryConfig.onRetry?.(attempt, error, delayMs);
         },
       }
     );
@@ -259,9 +260,10 @@ export class PoolManager<
    * Connect to shared database with retry logic
    */
   private async connectSharedWithRetry(): Promise<SharedDb<TSharedSchema>> {
-    const maxAttempts = this.retryConfig.maxAttempts;
+    const retryConfig = this.retryHandler.getConfig();
+    const maxAttempts = retryConfig.maxAttempts;
 
-    const result = await withRetry(
+    const result = await this.retryHandler.withRetry(
       async () => {
         const pool = new Pool({
           connectionString: this.config.connection.url,
@@ -294,13 +296,12 @@ export class PoolManager<
         }
       },
       {
-        ...this.retryConfig,
         onRetry: (attempt, error, delayMs) => {
           // Log retry event
           this.debugLogger.logConnectionRetry('shared', attempt, maxAttempts, error, delayMs);
 
           // Call user-provided onRetry hook
-          this.retryConfig.onRetry?.(attempt, error, delayMs);
+          retryConfig.onRetry?.(attempt, error, delayMs);
         },
       }
     );
@@ -323,14 +324,14 @@ export class PoolManager<
    */
   hasPool(tenantId: string): boolean {
     const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
-    return this.pools.has(schemaName);
+    return this.poolCache.has(schemaName);
   }
 
   /**
    * Get count of active pools
    */
   getPoolCount(): number {
-    return this.pools.size;
+    return this.poolCache.size();
   }
 
   /**
@@ -344,7 +345,7 @@ export class PoolManager<
    * Get the retry configuration
    */
   getRetryConfig(): Required<RetryConfig> {
-    return { ...this.retryConfig };
+    return this.retryHandler.getConfig();
   }
 
   /**
@@ -445,7 +446,7 @@ export class PoolManager<
     const maxPools = this.config.isolation.maxPools ?? defaults.maxPools;
     const tenantMetrics: TenantPoolMetrics[] = [];
 
-    for (const [schemaName, entry] of this.pools.entries()) {
+    for (const [schemaName, entry] of this.poolCache.entries()) {
       const tenantId = this.tenantIdBySchema.get(schemaName) ?? schemaName;
       const pool = entry.pool;
 
@@ -509,195 +510,7 @@ export class PoolManager<
    */
   async healthCheck(options: HealthCheckOptions = {}): Promise<HealthCheckResult> {
     this.ensureNotDisposed();
-
-    const startTime = Date.now();
-    const {
-      ping = true,
-      pingTimeoutMs = 5000,
-      includeShared = true,
-      tenantIds,
-    } = options;
-
-    const poolHealthResults: PoolHealth[] = [];
-    let sharedDbStatus: PoolHealthStatus = 'ok';
-    let sharedDbResponseTimeMs: number | undefined;
-    let sharedDbError: string | undefined;
-
-    // Determine which pools to check
-    const poolsToCheck: Array<{ schemaName: string; tenantId: string; entry: PoolEntry<TTenantSchema> }> = [];
-
-    if (tenantIds && tenantIds.length > 0) {
-      // Check only specified tenants
-      for (const tenantId of tenantIds) {
-        const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
-        const entry = this.pools.get(schemaName);
-        if (entry) {
-          poolsToCheck.push({ schemaName, tenantId, entry });
-        }
-      }
-    } else {
-      // Check all active pools
-      for (const [schemaName, entry] of this.pools.entries()) {
-        const tenantId = this.tenantIdBySchema.get(schemaName) ?? schemaName;
-        poolsToCheck.push({ schemaName, tenantId, entry });
-      }
-    }
-
-    // Check tenant pools in parallel
-    const poolChecks = poolsToCheck.map(async ({ schemaName, tenantId, entry }) => {
-      const poolHealth = await this.checkPoolHealth(tenantId, schemaName, entry, ping, pingTimeoutMs);
-      return poolHealth;
-    });
-
-    poolHealthResults.push(...(await Promise.all(poolChecks)));
-
-    // Check shared database
-    if (includeShared && this.sharedPool) {
-      const sharedResult = await this.checkSharedDbHealth(ping, pingTimeoutMs);
-      sharedDbStatus = sharedResult.status;
-      sharedDbResponseTimeMs = sharedResult.responseTimeMs;
-      sharedDbError = sharedResult.error;
-    }
-
-    // Calculate aggregate stats
-    const degradedPools = poolHealthResults.filter((p) => p.status === 'degraded').length;
-    const unhealthyPools = poolHealthResults.filter((p) => p.status === 'unhealthy').length;
-
-    // Overall health: healthy if no unhealthy pools and shared db is ok
-    const healthy = unhealthyPools === 0 && sharedDbStatus !== 'unhealthy';
-
-    return {
-      healthy,
-      pools: poolHealthResults,
-      sharedDb: sharedDbStatus,
-      sharedDbResponseTimeMs,
-      sharedDbError,
-      totalPools: poolHealthResults.length,
-      degradedPools,
-      unhealthyPools,
-      timestamp: new Date().toISOString(),
-      durationMs: Date.now() - startTime,
-    };
-  }
-
-  /**
-   * Check health of a single tenant pool
-   */
-  private async checkPoolHealth(
-    tenantId: string,
-    schemaName: string,
-    entry: PoolEntry<TTenantSchema>,
-    ping: boolean,
-    pingTimeoutMs: number
-  ): Promise<PoolHealth> {
-    const pool = entry.pool;
-    const totalConnections = pool.totalCount;
-    const idleConnections = pool.idleCount;
-    const waitingRequests = pool.waitingCount;
-
-    let status: PoolHealthStatus = 'ok';
-    let responseTimeMs: number | undefined;
-    let error: string | undefined;
-
-    // Determine status based on pool metrics
-    if (waitingRequests > 0) {
-      status = 'degraded';
-    }
-
-    // Execute ping query if requested
-    if (ping) {
-      const pingResult = await this.executePingQuery(pool, pingTimeoutMs);
-      responseTimeMs = pingResult.responseTimeMs;
-
-      if (!pingResult.success) {
-        status = 'unhealthy';
-        error = pingResult.error;
-      } else if (pingResult.responseTimeMs && pingResult.responseTimeMs > pingTimeoutMs / 2) {
-        // Slow response indicates degraded status
-        if (status === 'ok') {
-          status = 'degraded';
-        }
-      }
-    }
-
-    return {
-      tenantId,
-      schemaName,
-      status,
-      totalConnections,
-      idleConnections,
-      waitingRequests,
-      responseTimeMs,
-      error,
-    };
-  }
-
-  /**
-   * Check health of shared database
-   */
-  private async checkSharedDbHealth(
-    ping: boolean,
-    pingTimeoutMs: number
-  ): Promise<{ status: PoolHealthStatus; responseTimeMs?: number; error?: string }> {
-    if (!this.sharedPool) {
-      return { status: 'ok' };
-    }
-
-    let status: PoolHealthStatus = 'ok';
-    let responseTimeMs: number | undefined;
-    let error: string | undefined;
-
-    const waitingRequests = this.sharedPool.waitingCount;
-    if (waitingRequests > 0) {
-      status = 'degraded';
-    }
-
-    if (ping) {
-      const pingResult = await this.executePingQuery(this.sharedPool, pingTimeoutMs);
-      responseTimeMs = pingResult.responseTimeMs;
-
-      if (!pingResult.success) {
-        status = 'unhealthy';
-        error = pingResult.error;
-      } else if (pingResult.responseTimeMs && pingResult.responseTimeMs > pingTimeoutMs / 2) {
-        if (status === 'ok') {
-          status = 'degraded';
-        }
-      }
-    }
-
-    return { status, responseTimeMs, error };
-  }
-
-  /**
-   * Execute a ping query with timeout
-   */
-  private async executePingQuery(
-    pool: Pool,
-    timeoutMs: number
-  ): Promise<{ success: boolean; responseTimeMs?: number; error?: string }> {
-    const startTime = Date.now();
-
-    try {
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Health check ping timeout')), timeoutMs);
-      });
-
-      const queryPromise = pool.query('SELECT 1');
-
-      await Promise.race([queryPromise, timeoutPromise]);
-
-      return {
-        success: true,
-        responseTimeMs: Date.now() - startTime,
-      };
-    } catch (err) {
-      return {
-        success: false,
-        responseTimeMs: Date.now() - startTime,
-        error: (err as Error).message,
-      };
-    }
+    return this.healthChecker.checkHealth(options);
   }
 
   /**
@@ -705,13 +518,13 @@ export class PoolManager<
    */
   async evictPool(tenantId: string, reason: string = 'manual'): Promise<void> {
     const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
-    const entry = this.pools.get(schemaName);
+    const entry = this.poolCache.get(schemaName);
 
     if (entry) {
       // Log eviction
       this.debugLogger.logPoolEvicted(tenantId, schemaName, reason);
 
-      this.pools.delete(schemaName);
+      this.poolCache.delete(schemaName);
       this.tenantIdBySchema.delete(schemaName);
       await this.closePool(entry.pool, tenantId);
     }
@@ -723,11 +536,10 @@ export class PoolManager<
   startCleanup(): void {
     if (this.cleanupInterval) return;
 
-    const poolTtlMs = this.config.isolation.poolTtlMs ?? defaults.poolTtlMs;
     const cleanupIntervalMs = defaults.cleanupIntervalMs;
 
     this.cleanupInterval = setInterval(() => {
-      void this.cleanupIdlePools(poolTtlMs);
+      void this.cleanupIdlePools();
     }, cleanupIntervalMs);
 
     // Don't prevent process exit
@@ -756,12 +568,12 @@ export class PoolManager<
     // Close all tenant pools
     const closePromises: Promise<void>[] = [];
 
-    for (const [schemaName, entry] of this.pools.entries()) {
+    for (const [schemaName, entry] of this.poolCache.entries()) {
       const tenantId = this.tenantIdBySchema.get(schemaName);
       closePromises.push(this.closePool(entry.pool, tenantId ?? schemaName));
     }
 
-    this.pools.clear();
+    await this.poolCache.clear();
     this.tenantIdBySchema.clear();
 
     // Close shared pool
@@ -838,20 +650,14 @@ export class PoolManager<
   /**
    * Cleanup pools that have been idle for too long
    */
-  private async cleanupIdlePools(poolTtlMs: number): Promise<void> {
-    const now = Date.now();
-    const toEvict: string[] = [];
+  private async cleanupIdlePools(): Promise<void> {
+    const evictedSchemas = await this.poolCache.evictExpired();
 
-    for (const [schemaName, entry] of this.pools.entries()) {
-      if (now - entry.lastAccess > poolTtlMs) {
-        toEvict.push(schemaName);
-      }
-    }
-
-    for (const schemaName of toEvict) {
+    for (const schemaName of evictedSchemas) {
       const tenantId = this.tenantIdBySchema.get(schemaName);
       if (tenantId) {
-        await this.evictPool(tenantId, 'ttl_expired');
+        this.debugLogger.logPoolEvicted(tenantId, schemaName, 'ttl_expired');
+        this.tenantIdBySchema.delete(schemaName);
       }
     }
   }
