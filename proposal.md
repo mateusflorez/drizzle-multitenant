@@ -212,7 +212,7 @@ project/
 
 ---
 
-### 4. Scaffold Command
+### 4. Scaffold Command ✅ IMPLEMENTADO
 
 **Problema:** Criar novos componentes requer copiar/colar código boilerplate.
 
@@ -404,7 +404,7 @@ npx drizzle-multitenant import --from=./other-project/schemas.json
 - [x] Doctor command ✅
 
 ### Phase 2: Developer Experience (v1.4.0)
-- [ ] Scaffold command
+- [x] Scaffold command ✅
 - [ ] Schema linting
 - [x] Interactive UI enhancements (shared migrations) ✅
 
@@ -436,7 +436,7 @@ src/
 │   │   ├── migrate-shared.ts        # ✅ IMPLEMENTADO
 │   │   ├── seed-shared.ts           # ✅ IMPLEMENTADO
 │   │   ├── seed-all.ts              # ✅ IMPLEMENTADO
-│   │   ├── scaffold.ts              # PENDENTE
+│   │   ├── scaffold.ts              # ✅ IMPLEMENTADO
 │   │   ├── lint.ts                  # PENDENTE
 │   │   ├── doctor.ts                # ✅ IMPLEMENTADO
 │   │   └── export.ts                # PENDENTE
@@ -460,13 +460,17 @@ src/
 │   │   ├── conventions.ts
 │   │   └── security.ts
 │   └── reporter.ts
-└── scaffold/                        # PENDENTE
+└── scaffold/                        # ✅ IMPLEMENTADO
     ├── index.ts
-    ├── templates/
-    │   ├── schema.ts.hbs
-    │   ├── seed.ts.hbs
-    │   └── migration.sql.hbs
-    └── generator.ts
+    ├── types.ts
+    ├── generator.ts
+    ├── generator.test.ts
+    └── templates/
+        ├── index.ts
+        ├── schema-template.ts
+        ├── seed-template.ts
+        ├── migration-template.ts
+        └── templates.test.ts
 ```
 
 ### Breaking Changes
@@ -514,6 +518,27 @@ src/
 ---
 
 ## Changelog
+
+### 2025-12-25 (Scaffold Command)
+- ✅ Implementado módulo `scaffold` em `src/scaffold/`
+- ✅ Implementado comando CLI `scaffold:schema` para gerar schemas Drizzle
+  - Suporte a tenant e shared schemas
+  - Opções: timestamps, soft delete, UUID/serial, example columns
+  - Modo interativo com `--interactive`
+  - Geração de Zod schemas e tipos TypeScript
+- ✅ Implementado comando CLI `scaffold:seed` para gerar arquivos de seed
+  - Suporte a tenant e shared seeds
+  - Template com import de tabela opcional
+  - Exemplos de uso do CLI nos comentários
+- ✅ Implementado comando CLI `scaffold:migration` para gerar migrações SQL
+  - 5 templates: create-table, add-column, add-index, add-foreign-key, blank
+  - Inferência automática de template baseada no nome
+  - Numeração sequencial automática (0001, 0002, etc.)
+- ✅ Adicionado módulo `src/scaffold/templates/` com templates reutilizáveis
+- ✅ Exportação via `drizzle-multitenant/scaffold` no package.json
+- ✅ Suporte a output JSON (`--json` flag)
+- ✅ Adicionados 60 testes unitários
+- ✅ Todos os 812 testes passando
 
 ### 2025-12-25 (Doctor Command)
 - ✅ Implementado comando `doctor` em `src/cli/commands/doctor.ts`

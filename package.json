@@ -34,6 +34,10 @@
     "./cross-schema": {
       "import": "./dist/cross-schema/index.js",
       "types": "./dist/cross-schema/index.d.ts"
+    },
+    "./scaffold": {
+      "import": "./dist/scaffold/index.js",
+      "types": "./dist/scaffold/index.d.ts"
     }
   },
   "bin": {

@@ -20,6 +20,10 @@ import {
   seedSharedCommand,
   seedAllCommand,
   doctorCommand,
+  scaffoldCommand,
+  scaffoldSchemaCommand,
+  scaffoldSeedCommand,
+  scaffoldMigrationCommand,
 } from './commands/index.js';
 import { initOutputContext } from './utils/output.js';
 import { mainMenu } from './ui/menu.js';
@@ -70,6 +74,9 @@ Examples:
   $ drizzle-multitenant migrate --tenant=my-tenant --dry-run
   $ drizzle-multitenant generate --name add-users-table
   $ drizzle-multitenant tenant:create --id new-tenant
+  $ drizzle-multitenant scaffold:schema orders --type=tenant
+  $ drizzle-multitenant scaffold:seed initial --type=tenant
+  $ drizzle-multitenant scaffold:migration add-orders --type=tenant
   $ drizzle-multitenant status --json | jq '.summary'
 
 Documentation:
@@ -95,6 +102,10 @@ program.addCommand(seedCommand);
 program.addCommand(seedSharedCommand);
 program.addCommand(seedAllCommand);
 program.addCommand(doctorCommand);
+program.addCommand(scaffoldCommand);
+program.addCommand(scaffoldSchemaCommand);
+program.addCommand(scaffoldSeedCommand);
+program.addCommand(scaffoldMigrationCommand);
 
 // Default action: launch interactive mode when no command is specified
 program.action(async () => {

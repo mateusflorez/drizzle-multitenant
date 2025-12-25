@@ -16,3 +16,9 @@ export { seedCommand } from './seed.js';
 export { seedSharedCommand } from './seed-shared.js';
 export { seedAllCommand } from './seed-all.js';
 export { doctorCommand } from './doctor.js';
+export {
+  scaffoldCommand,
+  scaffoldSchemaCommand,
+  scaffoldSeedCommand,
+  scaffoldMigrationCommand,
+} from './scaffold.js';
