@@ -2,9 +2,11 @@ import { select, confirm, input, checkbox, Separator } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import Table from 'cli-table3';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createMigrator } from '../../migrator/migrator.js';
 import type { MultitenantConfig } from '../../types.js';
-import type { TenantMigrationStatus } from '../../migrator/types.js';
+import type { TenantMigrationStatus, SeedFunction } from '../../migrator/types.js';
 import {
   showBanner,
   showHeader,
@@ -144,6 +146,7 @@ export async function mainMenu(configPath?: string): Promise<void> {
         name: `Migrate Tenants ${summary.totalPending > 0 ? chalk.yellow(`(${summary.totalPending} pending)`) : chalk.dim('(all up to date)')}`,
         value: 'migrate',
       },
+      { name: 'Seed Tenants', value: 'seed' },
       new Separator(),
       { name: 'Create Tenant', value: 'create' },
       { name: 'Drop Tenant', value: 'drop' },
@@ -161,6 +164,9 @@ export async function mainMenu(configPath?: string): Promise<void> {
       break;
     case 'migrate':
       await migrateMenu(ctx, statuses);
+      break;
+    case 'seed':
+      await seedMenu(ctx, statuses);
       break;
     case 'create':
       await createTenantMenu(ctx);
@@ -424,6 +430,151 @@ async function runMigration(ctx: MenuContext, tenantIds: string[]): Promise<void
     onError: (tenantId, error) => {
       console.log(chalk.red(`    Error: ${error.message}`));
       return 'continue';
+    },
+  });
+
+  const duration = Date.now() - startTime;
+
+  console.log('');
+  console.log(chalk.bold('  Results:'));
+  console.log(`    Succeeded: ${chalk.green(results.succeeded.toString())}`);
+  if (results.failed > 0) {
+    console.log(`    Failed:    ${chalk.red(results.failed.toString())}`);
+  }
+  console.log(`    Duration:  ${chalk.dim(formatDuration(duration))}`);
+
+  if (results.failed > 0) {
+    console.log('');
+    console.log(chalk.red('  Failed tenants:'));
+    for (const detail of results.details.filter((d) => !d.success)) {
+      console.log(`    ${chalk.red('✗')} ${detail.tenantId}: ${chalk.dim(detail.error || 'Unknown error')}`);
+    }
+  }
+
+  console.log('');
+  await pressEnterToContinue();
+}
+
+/**
+ * Seed tenants menu
+ */
+async function seedMenu(
+  ctx: MenuContext,
+  statuses: TenantMigrationStatus[]
+): Promise<void> {
+  clearScreen();
+  showHeader('Seed Tenants');
+
+  if (statuses.length === 0) {
+    showStatus('No tenants found', 'warning');
+    await pressEnterToContinue();
+    return;
+  }
+
+  // Prompt for seed file path
+  const seedFilePath = await input({
+    message: 'Seed file path:',
+    default: './seeds/initial.ts',
+    validate: (value) => {
+      if (!value.trim()) return 'Seed file path cannot be empty';
+      return true;
+    },
+  });
+
+  // Load seed file
+  const spinner = ora('Loading seed file...').start();
+  let seedFn: SeedFunction;
+
+  try {
+    const absolutePath = resolve(process.cwd(), seedFilePath);
+    const seedFileUrl = pathToFileURL(absolutePath).href;
+    const seedModule = await import(seedFileUrl);
+    seedFn = seedModule.seed || seedModule.default;
+
+    if (typeof seedFn !== 'function') {
+      spinner.fail('Seed file must export a "seed" function or default export');
+      console.log(chalk.dim('\n  Expected format:'));
+      console.log(chalk.dim('    export const seed: SeedFunction = async (db, tenantId) => { ... };'));
+      await pressEnterToContinue();
+      return;
+    }
+
+    spinner.succeed('Seed file loaded');
+  } catch (error) {
+    spinner.fail('Failed to load seed file');
+    const err = error as Error;
+    if (err.message.includes('Cannot find module')) {
+      console.log(chalk.red(`\n  File not found: ${seedFilePath}`));
+    } else {
+      console.log(chalk.red(`\n  ${err.message}`));
+    }
+    await pressEnterToContinue();
+    return;
+  }
+
+  console.log('');
+
+  // Select tenants
+  const selectedTenants = await checkbox({
+    message: 'Select tenants to seed:',
+    choices: statuses.map((s) => ({
+      name: `${s.tenantId} ${chalk.dim(`(${s.schemaName})`)}`,
+      value: s.tenantId,
+      checked: true,
+    })),
+    pageSize: 15,
+  });
+
+  if (selectedTenants.length === 0) {
+    showStatus('No tenants selected', 'warning');
+    await pressEnterToContinue();
+    return;
+  }
+
+  const confirmSeed = await confirm({
+    message: `Seed ${selectedTenants.length} tenant(s)?`,
+    default: true,
+  });
+
+  if (!confirmSeed) {
+    return;
+  }
+
+  await runSeeding(ctx, selectedTenants, seedFn);
+}
+
+/**
+ * Run seeding for selected tenants
+ */
+async function runSeeding(
+  ctx: MenuContext,
+  tenantIds: string[],
+  seedFn: SeedFunction
+): Promise<void> {
+  clearScreen();
+  showHeader('Running Seed');
+
+  const migrator = createMigrator(ctx.config, {
+    migrationsFolder: ctx.migrationsFolder,
+    ...(ctx.migrationsTable && { migrationsTable: ctx.migrationsTable }),
+    tenantDiscovery: async () => tenantIds,
+  });
+
+  const startTime = Date.now();
+  console.log(chalk.dim(`  Seeding ${tenantIds.length} tenant(s)...\n`));
+
+  const results = await migrator.seedAll(seedFn as any, {
+    concurrency: 10,
+    onProgress: (tenantId: string, status: string) => {
+      if (status === 'completed') {
+        console.log(chalk.green(`  ✓ ${tenantId}`));
+      } else if (status === 'failed') {
+        console.log(chalk.red(`  ✗ ${tenantId}`));
+      }
+    },
+    onError: (tenantId: string, error: Error) => {
+      console.log(chalk.red(`    Error: ${error.message}`));
+      return 'continue' as const;
     },
   });
 

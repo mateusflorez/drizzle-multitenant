@@ -488,4 +488,168 @@ describe('Migrator', () => {
       expect('format' in status).toBe(true);
     });
   });
+
+  describe('seedTenant', () => {
+    it('should seed a single tenant', async () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const seedFn = vi.fn().mockResolvedValue(undefined);
+
+      const result = await migrator.seedTenant('tenant-1', seedFn);
+
+      expect(result.tenantId).toBe('tenant-1');
+      expect(result.schemaName).toBe('tenant_tenant-1');
+      expect(result.success).toBe(true);
+      expect(result.durationMs).toBeGreaterThanOrEqual(0);
+      expect(seedFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('should return error result when seed function throws', async () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const seedFn = vi.fn().mockRejectedValue(new Error('Seed failed'));
+
+      const result = await migrator.seedTenant('tenant-1', seedFn);
+
+      expect(result.tenantId).toBe('tenant-1');
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Seed failed');
+    });
+
+    it('should pass tenantId to seed function', async () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const seedFn = vi.fn().mockResolvedValue(undefined);
+
+      await migrator.seedTenant('my-tenant', seedFn);
+
+      expect(seedFn).toHaveBeenCalledWith(expect.anything(), 'my-tenant');
+    });
+  });
+
+  describe('seedAll', () => {
+    it('should seed all tenants from discovery', async () => {
+      const tenantIds = ['tenant-1', 'tenant-2', 'tenant-3'];
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => tenantIds,
+      });
+
+      const seedFn = vi.fn().mockResolvedValue(undefined);
+
+      const results = await migrator.seedAll(seedFn, { concurrency: 2 });
+
+      expect(results.total).toBe(3);
+      expect(results.succeeded).toBe(3);
+      expect(results.failed).toBe(0);
+      expect(seedFn).toHaveBeenCalledTimes(3);
+    });
+
+    it('should call progress callback', async () => {
+      const progressCalls: string[] = [];
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const seedFn = vi.fn().mockResolvedValue(undefined);
+
+      await migrator.seedAll(seedFn, {
+        onProgress: (tenantId, status) => {
+          progressCalls.push(`${tenantId}:${status}`);
+        },
+      });
+
+      expect(progressCalls).toContain('tenant-1:starting');
+      expect(progressCalls).toContain('tenant-1:completed');
+    });
+
+    it('should continue on error when handler returns continue', async () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2'],
+      });
+
+      let callCount = 0;
+      const seedFn = vi.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('First seed failed');
+        }
+        return Promise.resolve();
+      });
+
+      const results = await migrator.seedAll(seedFn, {
+        concurrency: 1,
+        onError: () => 'continue',
+      });
+
+      expect(results.total).toBe(2);
+      expect(results.failed).toBe(1);
+      expect(results.succeeded).toBe(1);
+    });
+
+    it('should abort on error when handler returns abort', async () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2', 'tenant-3'],
+      });
+
+      const seedFn = vi.fn().mockRejectedValue(new Error('Seed failed'));
+
+      const results = await migrator.seedAll(seedFn, {
+        concurrency: 1,
+        onError: () => 'abort',
+      });
+
+      expect(results.failed).toBeGreaterThan(0);
+      expect(results.skipped).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe('seedTenants', () => {
+    it('should seed specific tenants', async () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => [],
+      });
+
+      const seedFn = vi.fn().mockResolvedValue(undefined);
+
+      const results = await migrator.seedTenants(['tenant-1', 'tenant-2'], seedFn);
+
+      expect(results.total).toBe(2);
+      expect(results.succeeded).toBe(2);
+      expect(results.details.map((d) => d.tenantId)).toEqual(['tenant-1', 'tenant-2']);
+    });
+
+    it('should respect concurrency option', async () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => [],
+      });
+
+      const seedFn = vi.fn().mockResolvedValue(undefined);
+
+      const results = await migrator.seedTenants(
+        ['tenant-1', 'tenant-2', 'tenant-3'],
+        seedFn,
+        { concurrency: 1 }
+      );
+
+      expect(results.total).toBe(3);
+      expect(results.succeeded).toBe(3);
+    });
+  });
 });

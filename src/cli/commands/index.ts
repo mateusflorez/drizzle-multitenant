@@ -8,3 +8,4 @@ export { convertFormatCommand } from './convert-format.js';
 export { initCommand } from './init.js';
 export { completionCommand } from './completion.js';
 export { interactiveCommand } from './interactive.js';
+export { seedCommand } from './seed.js';

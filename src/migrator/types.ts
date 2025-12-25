@@ -1,4 +1,58 @@
 import type { TableFormat } from './table-format.js';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+
+/**
+ * Seed function signature
+ * Called with the tenant database instance and tenant ID
+ *
+ * @example
+ * ```typescript
+ * const seed: SeedFunction = async (db, tenantId) => {
+ *   await db.insert(roles).values([
+ *     { name: 'admin', permissions: ['*'] },
+ *     { name: 'user', permissions: ['read'] },
+ *   ]);
+ * };
+ * ```
+ */
+export type SeedFunction<TSchema extends Record<string, unknown> = Record<string, unknown>> = (
+  db: PostgresJsDatabase<TSchema>,
+  tenantId: string
+) => Promise<void>;
+
+/**
+ * Seed result for a single tenant
+ */
+export interface TenantSeedResult {
+  tenantId: string;
+  schemaName: string;
+  success: boolean;
+  error?: string;
+  durationMs: number;
+}
+
+/**
+ * Aggregate seed results
+ */
+export interface SeedResults {
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  details: TenantSeedResult[];
+}
+
+/**
+ * Options for seed operations
+ */
+export interface SeedOptions {
+  /** Number of concurrent seed operations */
+  concurrency?: number;
+  /** Progress callback */
+  onProgress?: (tenantId: string, status: 'starting' | 'seeding' | 'completed' | 'failed' | 'skipped') => void;
+  /** Error handler */
+  onError?: (tenantId: string, error: Error) => 'continue' | 'abort';
+}
 
 /**
  * Migration file metadata

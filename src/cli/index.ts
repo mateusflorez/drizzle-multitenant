@@ -12,6 +12,7 @@ import {
   initCommand,
   completionCommand,
   interactiveCommand,
+  seedCommand,
 } from './commands/index.js';
 import { initOutputContext } from './utils/output.js';
 import { mainMenu } from './ui/menu.js';
@@ -79,6 +80,7 @@ program.addCommand(convertFormatCommand);
 program.addCommand(initCommand);
 program.addCommand(completionCommand);
 program.addCommand(interactiveCommand);
+program.addCommand(seedCommand);
 
 // Default action: launch interactive mode when no command is specified
 program.action(async () => {
