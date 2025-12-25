@@ -11,6 +11,7 @@ import type {
   TenantWarmupResult,
 } from './types.js';
 import { DEFAULT_CONFIG as defaults } from './types.js';
+import { createDebugLogger, DebugLogger } from './debug.js';
 
 /**
  * Pool manager that handles tenant database connections with LRU eviction
@@ -25,9 +26,12 @@ export class PoolManager<
   private sharedDb: SharedDb<TSharedSchema> | null = null;
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
+  private readonly debugLogger: DebugLogger;
 
   constructor(private readonly config: Config<TTenantSchema, TSharedSchema>) {
     const maxPools = config.isolation.maxPools ?? defaults.maxPools;
+
+    this.debugLogger = createDebugLogger(config.debug);
 
     this.pools = new LRUCache<string, PoolEntry<TTenantSchema>>({
       max: maxPools,
@@ -51,6 +55,9 @@ export class PoolManager<
       entry = this.createPoolEntry(tenantId, schemaName);
       this.pools.set(schemaName, entry);
       this.tenantIdBySchema.set(schemaName, tenantId);
+
+      // Log pool creation
+      this.debugLogger.logPoolCreated(tenantId, schemaName);
 
       // Fire hook asynchronously
       void this.config.hooks?.onPoolCreated?.(tenantId);
@@ -148,22 +155,30 @@ export class PoolManager<
               }
             }
 
+            const durationMs = Date.now() - tenantStart;
             onProgress?.(tenantId, 'completed');
+
+            // Log warmup
+            this.debugLogger.logWarmup(tenantId, true, durationMs, alreadyWarm);
 
             return {
               tenantId,
               success: true,
               alreadyWarm,
-              durationMs: Date.now() - tenantStart,
+              durationMs,
             };
           } catch (error) {
+            const durationMs = Date.now() - tenantStart;
             onProgress?.(tenantId, 'failed');
+
+            // Log warmup failure
+            this.debugLogger.logWarmup(tenantId, false, durationMs, false);
 
             return {
               tenantId,
               success: false,
               alreadyWarm: false,
-              durationMs: Date.now() - tenantStart,
+              durationMs,
               error: (error as Error).message,
             };
           }
@@ -186,11 +201,14 @@ export class PoolManager<
   /**
    * Manually evict a tenant pool
    */
-  async evictPool(tenantId: string): Promise<void> {
+  async evictPool(tenantId: string, reason: string = 'manual'): Promise<void> {
     const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
     const entry = this.pools.get(schemaName);
 
     if (entry) {
+      // Log eviction
+      this.debugLogger.logPoolEvicted(tenantId, schemaName, reason);
+
       this.pools.delete(schemaName);
       this.tenantIdBySchema.delete(schemaName);
       await this.closePool(entry.pool, tenantId);
@@ -266,8 +284,11 @@ export class PoolManager<
     });
 
     pool.on('error', async (err) => {
+      // Log pool error
+      this.debugLogger.logPoolError(tenantId, err);
+
       void this.config.hooks?.onError?.(tenantId, err);
-      await this.evictPool(tenantId);
+      await this.evictPool(tenantId, 'error');
     });
 
     const db = drizzle(pool, {
@@ -288,6 +309,11 @@ export class PoolManager<
   private disposePoolEntry(entry: PoolEntry<TTenantSchema>, schemaName: string): void {
     const tenantId = this.tenantIdBySchema.get(schemaName);
     this.tenantIdBySchema.delete(schemaName);
+
+    // Log pool eviction
+    if (tenantId) {
+      this.debugLogger.logPoolEvicted(tenantId, schemaName, 'lru_eviction');
+    }
 
     void this.closePool(entry.pool, tenantId ?? schemaName).then(() => {
       if (tenantId) {
@@ -323,7 +349,7 @@ export class PoolManager<
     for (const schemaName of toEvict) {
       const tenantId = this.tenantIdBySchema.get(schemaName);
       if (tenantId) {
-        await this.evictPool(tenantId);
+        await this.evictPool(tenantId, 'ttl_expired');
       }
     }
   }

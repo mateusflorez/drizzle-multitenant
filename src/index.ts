@@ -20,6 +20,8 @@ export type {
   SchemasConfig,
   Hooks,
   MetricsConfig,
+  DebugConfig,
+  DebugContext,
   TenantManager,
   TenantDb,
   SharedDb,

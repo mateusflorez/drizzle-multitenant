@@ -66,6 +66,42 @@ export interface MetricsConfig {
 }
 
 /**
+ * Debug configuration for development and troubleshooting
+ */
+export interface DebugConfig {
+  /** Enable debug mode */
+  enabled: boolean;
+  /** Log SQL queries with tenant context */
+  logQueries?: boolean;
+  /** Log pool lifecycle events (created, evicted) */
+  logPoolEvents?: boolean;
+  /** Threshold in ms to log slow queries (default: 1000) */
+  slowQueryThreshold?: number;
+  /** Custom logger function (default: console.log) */
+  logger?: (message: string, context?: DebugContext) => void;
+}
+
+/**
+ * Context passed to debug logger
+ */
+export interface DebugContext {
+  /** Event type */
+  type: 'query' | 'slow_query' | 'pool_created' | 'pool_evicted' | 'pool_error' | 'warmup';
+  /** Tenant ID */
+  tenantId?: string;
+  /** Schema name */
+  schemaName?: string;
+  /** SQL query (for query events) */
+  query?: string;
+  /** Query duration in ms */
+  durationMs?: number;
+  /** Error message */
+  error?: string;
+  /** Additional metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
  * Main configuration interface
  */
 export interface Config<
@@ -82,6 +118,8 @@ export interface Config<
   hooks?: Hooks;
   /** Metrics configuration */
   metrics?: MetricsConfig;
+  /** Debug configuration */
+  debug?: DebugConfig;
 }
 
 /**

@@ -493,6 +493,83 @@ interface WarmupResult {
 }
 ```
 
+## Debug Mode
+
+Enable debug mode to log queries, pool events, and detect slow queries in development:
+
+```typescript
+import { defineConfig } from 'drizzle-multitenant';
+
+export default defineConfig({
+  connection: { url: process.env.DATABASE_URL! },
+  isolation: {
+    strategy: 'schema',
+    schemaNameTemplate: (id) => `tenant_${id}`,
+  },
+  schemas: { tenant: tenantSchema },
+
+  // Debug configuration
+  debug: {
+    enabled: process.env.NODE_ENV === 'development',
+    logQueries: true,           // Log SQL queries with tenant context
+    logPoolEvents: true,        // Log pool lifecycle (created, evicted)
+    slowQueryThreshold: 1000,   // Log slow queries (ms, default: 1000)
+  },
+});
+```
+
+### Console Output
+
+```
+[drizzle-multitenant] tenant=abc POOL_CREATED schema=tenant_abc
+[drizzle-multitenant] tenant=abc query="SELECT * FROM users WHERE..." duration=45ms
+[drizzle-multitenant] tenant=abc SLOW_QUERY duration=1523ms query="SELECT * FROM..."
+[drizzle-multitenant] tenant=abc POOL_EVICTED schema=tenant_abc reason=ttl_expired
+```
+
+### Custom Logger
+
+Integrate with your logging system (Pino, Winston, etc.):
+
+```typescript
+import pino from 'pino';
+
+const logger = pino();
+
+export default defineConfig({
+  // ...
+  debug: {
+    enabled: true,
+    logQueries: true,
+    logPoolEvents: true,
+    slowQueryThreshold: 500,
+    logger: (message, context) => {
+      if (context?.type === 'slow_query') {
+        logger.warn({ ...context }, message);
+      } else {
+        logger.debug({ ...context }, message);
+      }
+    },
+  },
+});
+```
+
+### Debug Context
+
+The custom logger receives a `DebugContext` object:
+
+```typescript
+interface DebugContext {
+  type: 'query' | 'slow_query' | 'pool_created' | 'pool_evicted' | 'pool_error' | 'warmup';
+  tenantId?: string;
+  schemaName?: string;
+  query?: string;        // For query events
+  durationMs?: number;
+  error?: string;        // For error events
+  metadata?: Record<string, unknown>;
+}
+```
+
 ## API Reference
 
 ### Core
