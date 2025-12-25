@@ -359,6 +359,142 @@ export class Migrator<
   }
 
   /**
+   * Mark migrations as applied without executing SQL
+   * Useful for syncing tracking state with already-applied migrations
+   */
+  async markAsApplied(
+    tenantId: string,
+    options: { onProgress?: MigrateOptions['onProgress'] } = {}
+  ): Promise<TenantMigrationResult> {
+    const startTime = Date.now();
+    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
+    const markedMigrations: string[] = [];
+
+    const pool = await this.createPool(schemaName);
+
+    try {
+      await this.migratorConfig.hooks?.beforeTenant?.(tenantId);
+
+      // Detect or determine the format before creating table
+      const format = await this.getOrDetectFormat(pool, schemaName);
+
+      // Ensure migrations table exists with correct format
+      await this.ensureMigrationsTable(pool, schemaName, format);
+
+      // Load all migrations
+      const allMigrations = await this.loadMigrations();
+
+      // Get applied migrations
+      const applied = await this.getAppliedMigrations(pool, schemaName, format);
+      const appliedSet = new Set(applied.map((m) => m.identifier));
+
+      // Filter pending migrations
+      const pending = allMigrations.filter(
+        (m) => !this.isMigrationApplied(m, appliedSet, format)
+      );
+
+      // Mark each pending migration as applied (without executing SQL)
+      for (const migration of pending) {
+        const migrationStart = Date.now();
+        options.onProgress?.(tenantId, 'migrating', migration.name);
+
+        await this.migratorConfig.hooks?.beforeMigration?.(tenantId, migration.name);
+        await this.recordMigration(pool, schemaName, migration, format);
+        await this.migratorConfig.hooks?.afterMigration?.(
+          tenantId,
+          migration.name,
+          Date.now() - migrationStart
+        );
+
+        markedMigrations.push(migration.name);
+      }
+
+      const result: TenantMigrationResult = {
+        tenantId,
+        schemaName,
+        success: true,
+        appliedMigrations: markedMigrations,
+        durationMs: Date.now() - startTime,
+        format: format.format,
+      };
+
+      await this.migratorConfig.hooks?.afterTenant?.(tenantId, result);
+
+      return result;
+    } catch (error) {
+      const result: TenantMigrationResult = {
+        tenantId,
+        schemaName,
+        success: false,
+        appliedMigrations: markedMigrations,
+        error: (error as Error).message,
+        durationMs: Date.now() - startTime,
+      };
+
+      await this.migratorConfig.hooks?.afterTenant?.(tenantId, result);
+
+      return result;
+    } finally {
+      await pool.end();
+    }
+  }
+
+  /**
+   * Mark migrations as applied for all tenants without executing SQL
+   * Useful for syncing tracking state with already-applied migrations
+   */
+  async markAllAsApplied(options: MigrateOptions = {}): Promise<MigrationResults> {
+    const {
+      concurrency = 10,
+      onProgress,
+      onError,
+    } = options;
+
+    const tenantIds = await this.migratorConfig.tenantDiscovery();
+    const results: TenantMigrationResult[] = [];
+    let aborted = false;
+
+    // Process tenants in batches
+    for (let i = 0; i < tenantIds.length && !aborted; i += concurrency) {
+      const batch = tenantIds.slice(i, i + concurrency);
+
+      const batchResults = await Promise.all(
+        batch.map(async (tenantId) => {
+          if (aborted) {
+            return this.createSkippedResult(tenantId);
+          }
+
+          try {
+            onProgress?.(tenantId, 'starting');
+            const result = await this.markAsApplied(tenantId, { onProgress });
+            onProgress?.(tenantId, result.success ? 'completed' : 'failed');
+            return result;
+          } catch (error) {
+            onProgress?.(tenantId, 'failed');
+            const action = onError?.(tenantId, error as Error);
+            if (action === 'abort') {
+              aborted = true;
+            }
+            return this.createErrorResult(tenantId, error as Error);
+          }
+        })
+      );
+
+      results.push(...batchResults);
+    }
+
+    // Mark remaining tenants as skipped if aborted
+    if (aborted) {
+      const remaining = tenantIds.slice(results.length);
+      for (const tenantId of remaining) {
+        results.push(this.createSkippedResult(tenantId));
+      }
+    }
+
+    return this.aggregateResults(results);
+  }
+
+  /**
    * Load migration files from the migrations folder
    */
   private async loadMigrations(): Promise<MigrationFile[]> {
@@ -556,6 +692,26 @@ export class Migrator<
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Record a migration as applied without executing SQL
+   * Used by markAsApplied to sync tracking state
+   */
+  private async recordMigration(
+    pool: Pool,
+    schemaName: string,
+    migration: MigrationFile,
+    format: DetectedFormat
+  ): Promise<void> {
+    const { identifier, timestamp, timestampType } = format.columns;
+    const identifierValue = identifier === 'name' ? migration.name : migration.hash;
+    const timestampValue = timestampType === 'bigint' ? Date.now() : new Date();
+
+    await pool.query(
+      `INSERT INTO "${schemaName}"."${format.tableName}" ("${identifier}", "${timestamp}") VALUES ($1, $2)`,
+      [identifierValue, timestampValue]
+    );
   }
 
   /**

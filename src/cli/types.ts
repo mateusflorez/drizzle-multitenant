@@ -126,6 +126,7 @@ export interface MigrateOptions extends GlobalOptions {
   tenants?: string;
   concurrency?: string;
   dryRun?: boolean;
+  markApplied?: boolean;
   migrationsFolder?: string;
 }
 

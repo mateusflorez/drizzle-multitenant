@@ -31,6 +31,7 @@ export const migrateCommand = new Command('migrate')
   .option('--tenants <ids>', 'Migrate specific tenants (comma-separated)')
   .option('--concurrency <number>', 'Number of concurrent migrations', '10')
   .option('--dry-run', 'Show what would be applied without executing')
+  .option('--mark-applied', 'Mark migrations as applied without executing SQL')
   .option('--migrations-folder <path>', 'Path to migrations folder')
   .addHelpText('after', `
 Examples:
@@ -40,6 +41,7 @@ Examples:
   $ drizzle-multitenant migrate --all --dry-run
   $ drizzle-multitenant migrate --all --concurrency=5
   $ drizzle-multitenant migrate --all --json
+  $ drizzle-multitenant migrate --all --mark-applied
 `)
   .action(async (options: MigrateOptions) => {
     const startTime = Date.now();
@@ -120,7 +122,12 @@ Examples:
         log(info(bold('\nDry run mode - no changes will be made\n')));
       }
 
-      log(info(`Migrating ${tenantIds.length} tenant${tenantIds.length > 1 ? 's' : ''}...\n`));
+      if (options.markApplied) {
+        log(info(bold('\nMark-applied mode - migrations will be recorded without executing SQL\n')));
+      }
+
+      const actionLabel = options.markApplied ? 'Marking' : 'Migrating';
+      log(info(`${actionLabel} ${tenantIds.length} tenant${tenantIds.length > 1 ? 's' : ''}...\n`));
 
       const migrator = createMigrator(config, {
         migrationsFolder: folder,
@@ -134,10 +141,9 @@ Examples:
       const progressBar = createProgressBar({ total: tenantIds.length });
       progressBar.start();
 
-      const results = await migrator.migrateAll({
+      const migrateOptions = {
         concurrency,
-        dryRun: !!options.dryRun,
-        onProgress: (tenantId, status, migrationName) => {
+        onProgress: (tenantId: string, status: string, migrationName?: string) => {
           if (status === 'completed') {
             progressBar.increment({ tenant: tenantId, status: 'success' });
             debug(`Completed: ${tenantId}`);
@@ -145,14 +151,19 @@ Examples:
             progressBar.increment({ tenant: tenantId, status: 'error' });
             debug(`Failed: ${tenantId}`);
           } else if (status === 'migrating' && migrationName) {
-            debug(`${tenantId}: Applying ${migrationName}`);
+            const actionVerb = options.markApplied ? 'Marking' : 'Applying';
+            debug(`${tenantId}: ${actionVerb} ${migrationName}`);
           }
         },
-        onError: (tenantId, err) => {
+        onError: (tenantId: string, err: Error) => {
           debug(`Error on ${tenantId}: ${err.message}`);
-          return 'continue';
+          return 'continue' as const;
         },
-      });
+      };
+
+      const results = options.markApplied
+        ? await migrator.markAllAsApplied(migrateOptions)
+        : await migrator.migrateAll({ ...migrateOptions, dryRun: !!options.dryRun });
 
       progressBar.stop();
 
