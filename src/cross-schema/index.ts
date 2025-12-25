@@ -6,6 +6,8 @@ export {
   buildCrossSchemaSelect,
 } from './cross-schema.js';
 
+export { withShared, WithSharedQueryBuilder } from './with-shared.js';
+
 export type {
   SchemaSource,
   CrossSchemaContext,
@@ -20,4 +22,7 @@ export type {
   CrossSchemaRawOptions,
   ColumnSelection,
   InferSelectedColumns,
+  WithSharedConfig,
+  WithSharedOptions,
+  InferSelectResult,
 } from './types.js';

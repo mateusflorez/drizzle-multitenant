@@ -413,8 +413,54 @@ npx drizzle-multitenant convert-format --to=drizzle-kit
 
 ## Cross-Schema Queries
 
+### Simplified API with `withShared()`
+
+The recommended way to perform cross-schema queries with automatic schema detection:
+
 ```typescript
-import { createCrossSchemaQuery } from 'drizzle-multitenant/cross-schema';
+import { withShared } from 'drizzle-multitenant';
+import { eq } from 'drizzle-orm';
+import * as tenantSchema from './schemas/tenant';   // { orders, customers }
+import * as sharedSchema from './schemas/shared';   // { plans, workflowSteps }
+
+const tenantDb = tenants.getDb('tenant-123');
+const sharedDb = tenants.getSharedDb();
+
+// Tables are auto-detected as tenant or shared based on schema config
+const result = await withShared(tenantDb, sharedDb, {
+  tenant: tenantSchema,
+  shared: sharedSchema,
+})
+  .from(orders)                    // Auto-detected as tenant table
+  .leftJoin(plans,                 // Auto-detected as shared table
+    eq(orders.planId, plans.id)
+  )
+  .innerJoin(customers,            // Auto-detected as tenant table
+    eq(orders.customerId, customers.id)
+  )
+  .select({
+    orderId: orders.id,
+    customerName: customers.name,
+    planName: plans.name,
+    planPrice: plans.price,
+  })
+  .where(eq(orders.status, 'active'))
+  .limit(50)
+  .execute();
+```
+
+**Features:**
+- Automatic detection of tenant vs shared tables
+- All join types: `leftJoin`, `innerJoin`, `rightJoin`, `fullJoin`
+- Full query builder: `where`, `orderBy`, `limit`, `offset`
+- Type-safe results inferred from select fields
+
+### Advanced: Manual Schema Control
+
+For cases where you need explicit control over schema names:
+
+```typescript
+import { createCrossSchemaQuery } from 'drizzle-multitenant';
 
 const query = createCrossSchemaQuery({
   tenantDb: tenants.getDb('tenant-123'),
@@ -423,14 +469,15 @@ const query = createCrossSchemaQuery({
   sharedSchema: 'public',
 });
 
-// Type-safe join between tenant and shared tables
+// Explicitly specify 'tenant' or 'shared' for each table
 const result = await query
+  .from('tenant', orders)
+  .leftJoin('shared', plans, eq(orders.planId, plans.id))
   .select({
     orderId: orders.id,
-    planName: subscriptionPlans.name,
+    planName: plans.name,
   })
-  .from(orders)
-  .leftJoin(subscriptionPlans, eq(orders.planId, subscriptionPlans.id));
+  .execute();
 ```
 
 ## Pool Warmup
@@ -579,6 +626,8 @@ interface DebugContext {
 | `defineConfig()` | Create typed configuration |
 | `createTenantManager()` | Create pool manager instance |
 | `createTenantContext()` | Create AsyncLocalStorage context |
+| `withShared()` | Create simplified cross-schema query builder |
+| `createCrossSchemaQuery()` | Create cross-schema query with manual control |
 
 ### Manager Methods
 

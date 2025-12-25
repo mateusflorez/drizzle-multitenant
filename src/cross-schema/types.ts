@@ -130,3 +130,33 @@ export type InferSelectedColumns<
 > = {
   [K in keyof TSelection as TSelection[K] extends true ? K : never]: T['_']['columns'][K extends keyof T['_']['columns'] ? K : never]['_']['data'];
 };
+
+/**
+ * Configuration for withShared helper
+ */
+export interface WithSharedConfig<
+  TTenantSchema extends Record<string, unknown> = Record<string, unknown>,
+  TSharedSchema extends Record<string, unknown> = Record<string, unknown>,
+> {
+  /** Tenant schema object containing table definitions */
+  tenant: TTenantSchema;
+  /** Shared schema object containing table definitions */
+  shared: TSharedSchema;
+}
+
+/**
+ * Options for withShared helper
+ */
+export interface WithSharedOptions {
+  /** Tenant schema name (default: derived from tenantDb) */
+  tenantSchema?: string;
+  /** Shared schema name (default: 'public') */
+  sharedSchema?: string;
+}
+
+/**
+ * Infer result type from select fields
+ */
+export type InferSelectResult<T extends Record<string, Column>> = {
+  [K in keyof T]: T[K]['_']['data'];
+};
