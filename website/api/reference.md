@@ -31,11 +31,48 @@ const tenants = createTenantManager(config);
 | `getSchemaName(tenantId)` | Get schema name for tenant |
 | `hasPool(tenantId)` | Check if pool exists |
 | `getPoolCount()` | Get count of active pools |
-| `getActiveTenantIds()` | Get list of active tenant IDs |
-| `getRetryConfig()` | Get current retry configuration |
+| `getActiveTenantIds()` | Get array of tenant IDs with active pools |
+| `getRetryConfig()` | Get current retry configuration object |
 | `evictPool(tenantId)` | Force evict a pool |
-| `warmup(tenantIds, options?)` | Pre-warm pools |
-| `dispose()` | Cleanup all pools |
+| `warmup(tenantIds, options?)` | Pre-warm pools for specified tenants |
+| `dispose()` | Cleanup all pools and connections |
+
+### Method Details
+
+#### getActiveTenantIds()
+
+Returns an array of tenant IDs that currently have active pools:
+
+```typescript
+const activeIds = tenants.getActiveTenantIds();
+// ['tenant-1', 'tenant-2', 'tenant-3']
+
+// Use for monitoring
+console.log(`Active pools: ${activeIds.length}/${tenants.getPoolCount()}`);
+```
+
+#### getRetryConfig()
+
+Returns the current retry configuration:
+
+```typescript
+const retryConfig = tenants.getRetryConfig();
+// {
+//   maxAttempts: 3,
+//   initialDelayMs: 100,
+//   maxDelayMs: 5000,
+//   backoffMultiplier: 2,
+//   jitter: true
+// }
+
+// Use for health checks
+app.get('/health', (req, res) => {
+  res.json({
+    pools: tenants.getPoolCount(),
+    retryConfig: tenants.getRetryConfig(),
+  });
+});
+```
 
 ## TenantContext
 

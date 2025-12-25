@@ -2,6 +2,20 @@
 
 Join tenant and shared tables with type safety.
 
+## When to Use
+
+| Approach | Use When |
+|----------|----------|
+| `withShared()` | Default choice. Automatic schema detection, less boilerplate |
+| `createCrossSchemaQuery()` | Need explicit control over schema names, dynamic schemas |
+
+### Common Use Cases
+
+- **E-commerce**: Join tenant orders with shared product catalog
+- **SaaS Billing**: Join tenant usage with shared pricing plans
+- **Workflows**: Join tenant tasks with shared workflow definitions
+- **Multi-region**: Join tenant data with shared configuration
+
 ## withShared() - Recommended
 
 Automatic schema detection based on your configuration:

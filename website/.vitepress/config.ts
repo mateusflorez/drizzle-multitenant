@@ -51,6 +51,9 @@ export default defineConfig({
             { text: 'Cross-Schema Queries', link: '/guide/cross-schema' },
             { text: 'Advanced', link: '/guide/advanced' },
             { text: 'Migration Formats', link: '/guide/migration-formats' },
+            { text: 'Performance', link: '/guide/performance' },
+            { text: 'Security', link: '/guide/security' },
+            { text: 'Troubleshooting', link: '/guide/troubleshooting' },
           ]
         }
       ],
@@ -82,7 +85,7 @@ export default defineConfig({
 
     footer: {
       message: 'Released under the MIT License.',
-      copyright: 'Copyright © 2024 Mateus Florez'
+      copyright: `Copyright © 2024-${new Date().getFullYear()} Mateus Florez`
     },
 
     search: {
