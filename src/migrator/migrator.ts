@@ -38,6 +38,7 @@ import type {
   SchemaDriftOptions,
 } from './types.js';
 import { detectTableFormat, getFormatConfig, type DetectedFormat, type TableFormat } from './table-format.js';
+import { SchemaManager } from './schema-manager.js';
 
 const DEFAULT_MIGRATIONS_TABLE = '__drizzle_migrations';
 
@@ -49,12 +50,14 @@ export class Migrator<
   TSharedSchema extends Record<string, unknown>,
 > {
   private readonly migrationsTable: string;
+  private readonly schemaManager: SchemaManager<TTenantSchema, TSharedSchema>;
 
   constructor(
     private readonly tenantConfig: Config<TTenantSchema, TSharedSchema>,
     private readonly migratorConfig: MigratorConfig
   ) {
     this.migrationsTable = migratorConfig.migrationsTable ?? DEFAULT_MIGRATIONS_TABLE;
+    this.schemaManager = new SchemaManager(tenantConfig, this.migrationsTable);
   }
 
   /**
@@ -319,23 +322,13 @@ export class Migrator<
    */
   async createTenant(tenantId: string, options: CreateTenantOptions = {}): Promise<void> {
     const { migrate = true } = options;
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
 
-    const pool = new Pool({
-      connectionString: this.tenantConfig.connection.url,
-      ...this.tenantConfig.connection.poolConfig,
-    });
+    // Delegate schema creation to SchemaManager
+    await this.schemaManager.createSchema(tenantId);
 
-    try {
-      // Create schema
-      await pool.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
-
-      if (migrate) {
-        // Apply all migrations
-        await this.migrateTenant(tenantId);
-      }
-    } finally {
-      await pool.end();
+    if (migrate) {
+      // Apply all migrations
+      await this.migrateTenant(tenantId);
     }
   }
 
@@ -343,42 +336,16 @@ export class Migrator<
    * Drop a tenant schema
    */
   async dropTenant(tenantId: string, options: DropTenantOptions = {}): Promise<void> {
-    const { cascade = true } = options;
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-
-    const pool = new Pool({
-      connectionString: this.tenantConfig.connection.url,
-      ...this.tenantConfig.connection.poolConfig,
-    });
-
-    try {
-      const cascadeSql = cascade ? 'CASCADE' : 'RESTRICT';
-      await pool.query(`DROP SCHEMA IF EXISTS "${schemaName}" ${cascadeSql}`);
-    } finally {
-      await pool.end();
-    }
+    // Delegate to SchemaManager
+    await this.schemaManager.dropSchema(tenantId, options);
   }
 
   /**
    * Check if a tenant schema exists
    */
   async tenantExists(tenantId: string): Promise<boolean> {
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-
-    const pool = new Pool({
-      connectionString: this.tenantConfig.connection.url,
-      ...this.tenantConfig.connection.poolConfig,
-    });
-
-    try {
-      const result = await pool.query(
-        `SELECT 1 FROM information_schema.schemata WHERE schema_name = $1`,
-        [schemaName]
-      );
-      return result.rowCount !== null && result.rowCount > 0;
-    } finally {
-      await pool.end();
-    }
+    // Delegate to SchemaManager
+    return this.schemaManager.schemaExists(tenantId);
   }
 
   /**
@@ -1026,53 +993,30 @@ export class Migrator<
 
   /**
    * Create a pool for a specific schema
+   * @deprecated Use schemaManager.createPool() directly
    */
   private async createPool(schemaName: string): Promise<Pool> {
-    return new Pool({
-      connectionString: this.tenantConfig.connection.url,
-      ...this.tenantConfig.connection.poolConfig,
-      options: `-c search_path="${schemaName}",public`,
-    });
+    return this.schemaManager.createPool(schemaName);
   }
 
   /**
    * Ensure migrations table exists with the correct format
+   * @deprecated Use schemaManager.ensureMigrationsTable() directly
    */
   private async ensureMigrationsTable(
     pool: Pool,
     schemaName: string,
     format: DetectedFormat
   ): Promise<void> {
-    const { identifier, timestamp, timestampType } = format.columns;
-
-    // Build column definitions based on format
-    const identifierCol = identifier === 'name'
-      ? 'name VARCHAR(255) NOT NULL UNIQUE'
-      : 'hash TEXT NOT NULL';
-
-    const timestampCol = timestampType === 'bigint'
-      ? `${timestamp} BIGINT NOT NULL`
-      : `${timestamp} TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`;
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS "${schemaName}"."${format.tableName}" (
-        id SERIAL PRIMARY KEY,
-        ${identifierCol},
-        ${timestampCol}
-      )
-    `);
+    return this.schemaManager.ensureMigrationsTable(pool, schemaName, format);
   }
 
   /**
    * Check if migrations table exists
+   * @deprecated Use schemaManager.migrationsTableExists() directly
    */
   private async migrationsTableExists(pool: Pool, schemaName: string): Promise<boolean> {
-    const result = await pool.query(
-      `SELECT 1 FROM information_schema.tables
-       WHERE table_schema = $1 AND table_name = $2`,
-      [schemaName, this.migrationsTable]
-    );
-    return result.rowCount !== null && result.rowCount > 0;
+    return this.schemaManager.migrationsTableExists(pool, schemaName);
   }
 
   /**

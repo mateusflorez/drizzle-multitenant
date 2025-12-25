@@ -1,4 +1,6 @@
 export { Migrator, createMigrator } from './migrator.js';
+export { SchemaManager, createSchemaManager } from './schema-manager.js';
+export type { CreateSchemaOptions, DropSchemaOptions } from './schema-manager.js';
 export { detectTableFormat, getFormatConfig, DEFAULT_FORMAT, DRIZZLE_KIT_FORMAT } from './table-format.js';
 export type { TableFormat, DetectedFormat } from './table-format.js';
 export type {
