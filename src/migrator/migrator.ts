@@ -2,7 +2,6 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Pool } from 'pg';
-import { drizzle } from 'drizzle-orm/node-postgres';
 import type { Config } from '../types.js';
 import type {
   MigratorConfig,
@@ -32,6 +31,7 @@ import type {
 import { detectTableFormat, getFormatConfig, type DetectedFormat, type TableFormat } from './table-format.js';
 import { SchemaManager } from './schema-manager.js';
 import { DriftDetector } from './drift/drift-detector.js';
+import { Seeder } from './seed/seeder.js';
 
 const DEFAULT_MIGRATIONS_TABLE = '__drizzle_migrations';
 
@@ -45,6 +45,7 @@ export class Migrator<
   private readonly migrationsTable: string;
   private readonly schemaManager: SchemaManager<TTenantSchema, TSharedSchema>;
   private readonly driftDetector: DriftDetector<TTenantSchema, TSharedSchema>;
+  private readonly seeder: Seeder<TTenantSchema>;
 
   constructor(
     private readonly tenantConfig: Config<TTenantSchema, TSharedSchema>,
@@ -56,6 +57,14 @@ export class Migrator<
       migrationsTable: this.migrationsTable,
       tenantDiscovery: migratorConfig.tenantDiscovery,
     });
+    this.seeder = new Seeder(
+      { tenantDiscovery: migratorConfig.tenantDiscovery },
+      {
+        createPool: this.schemaManager.createPool.bind(this.schemaManager),
+        schemaNameTemplate: tenantConfig.isolation.schemaNameTemplate,
+        tenantSchema: tenantConfig.schemas.tenant as TTenantSchema,
+      }
+    );
   }
 
   /**
@@ -797,6 +806,10 @@ export class Migrator<
     return this.aggregateSyncResults(results);
   }
 
+  // ============================================================================
+  // Seeding Methods (delegated to Seeder)
+  // ============================================================================
+
   /**
    * Seed a single tenant with initial data
    *
@@ -816,37 +829,7 @@ export class Migrator<
     tenantId: string,
     seedFn: SeedFunction<TTenantSchema>
   ): Promise<TenantSeedResult> {
-    const startTime = Date.now();
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-
-    const pool = await this.createPool(schemaName);
-
-    try {
-      // Create a drizzle instance with the tenant schema
-      const db = drizzle(pool, {
-        schema: this.tenantConfig.schemas.tenant as TTenantSchema,
-      });
-
-      // Execute the seed function
-      await seedFn(db as any, tenantId);
-
-      return {
-        tenantId,
-        schemaName,
-        success: true,
-        durationMs: Date.now() - startTime,
-      };
-    } catch (error) {
-      return {
-        tenantId,
-        schemaName,
-        success: false,
-        error: (error as Error).message,
-        durationMs: Date.now() - startTime,
-      };
-    } finally {
-      await pool.end();
-    }
+    return this.seeder.seedTenant(tenantId, seedFn);
   }
 
   /**
@@ -867,55 +850,7 @@ export class Migrator<
     seedFn: SeedFunction<TTenantSchema>,
     options: SeedOptions = {}
   ): Promise<SeedResults> {
-    const {
-      concurrency = 10,
-      onProgress,
-      onError,
-    } = options;
-
-    const tenantIds = await this.migratorConfig.tenantDiscovery();
-    const results: TenantSeedResult[] = [];
-    let aborted = false;
-
-    // Process tenants in batches
-    for (let i = 0; i < tenantIds.length && !aborted; i += concurrency) {
-      const batch = tenantIds.slice(i, i + concurrency);
-
-      const batchResults = await Promise.all(
-        batch.map(async (tenantId) => {
-          if (aborted) {
-            return this.createSkippedSeedResult(tenantId);
-          }
-
-          try {
-            onProgress?.(tenantId, 'starting');
-            onProgress?.(tenantId, 'seeding');
-            const result = await this.seedTenant(tenantId, seedFn);
-            onProgress?.(tenantId, result.success ? 'completed' : 'failed');
-            return result;
-          } catch (error) {
-            onProgress?.(tenantId, 'failed');
-            const action = onError?.(tenantId, error as Error);
-            if (action === 'abort') {
-              aborted = true;
-            }
-            return this.createErrorSeedResult(tenantId, error as Error);
-          }
-        })
-      );
-
-      results.push(...batchResults);
-    }
-
-    // Mark remaining tenants as skipped if aborted
-    if (aborted) {
-      const remaining = tenantIds.slice(results.length);
-      for (const tenantId of remaining) {
-        results.push(this.createSkippedSeedResult(tenantId));
-      }
-    }
-
-    return this.aggregateSeedResults(results);
+    return this.seeder.seedAll(seedFn, options);
   }
 
   /**
@@ -926,33 +861,7 @@ export class Migrator<
     seedFn: SeedFunction<TTenantSchema>,
     options: SeedOptions = {}
   ): Promise<SeedResults> {
-    const { concurrency = 10, onProgress, onError } = options;
-
-    const results: TenantSeedResult[] = [];
-
-    for (let i = 0; i < tenantIds.length; i += concurrency) {
-      const batch = tenantIds.slice(i, i + concurrency);
-
-      const batchResults = await Promise.all(
-        batch.map(async (tenantId) => {
-          try {
-            onProgress?.(tenantId, 'starting');
-            onProgress?.(tenantId, 'seeding');
-            const result = await this.seedTenant(tenantId, seedFn);
-            onProgress?.(tenantId, result.success ? 'completed' : 'failed');
-            return result;
-          } catch (error) {
-            onProgress?.(tenantId, 'failed');
-            onError?.(tenantId, error as Error);
-            return this.createErrorSeedResult(tenantId, error as Error);
-          }
-        })
-      );
-
-      results.push(...batchResults);
-    }
-
-    return this.aggregateSeedResults(results);
+    return this.seeder.seedTenants(tenantIds, seedFn, options);
   }
 
   /**
@@ -1231,45 +1140,6 @@ export class Migrator<
       total: results.length,
       succeeded: results.filter((r) => r.success).length,
       failed: results.filter((r) => !r.success).length,
-      details: results,
-    };
-  }
-
-  /**
-   * Create a skipped seed result
-   */
-  private createSkippedSeedResult(tenantId: string): TenantSeedResult {
-    return {
-      tenantId,
-      schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
-      success: false,
-      error: 'Skipped due to abort',
-      durationMs: 0,
-    };
-  }
-
-  /**
-   * Create an error seed result
-   */
-  private createErrorSeedResult(tenantId: string, error: Error): TenantSeedResult {
-    return {
-      tenantId,
-      schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
-      success: false,
-      error: error.message,
-      durationMs: 0,
-    };
-  }
-
-  /**
-   * Aggregate seed results
-   */
-  private aggregateSeedResults(results: TenantSeedResult[]): SeedResults {
-    return {
-      total: results.length,
-      succeeded: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success && r.error !== 'Skipped due to abort').length,
-      skipped: results.filter((r) => r.error === 'Skipped due to abort').length,
       details: results,
     };
   }

@@ -366,7 +366,6 @@ export interface ITenantStatus {
  */
 export interface IMigrator<
   TTenantSchema extends Record<string, unknown> = Record<string, unknown>,
-  TSharedSchema extends Record<string, unknown> = Record<string, unknown>,
 > {
   // Migration operations
   migrateAll(options?: MigrateOptions): Promise<MigrationResults>;

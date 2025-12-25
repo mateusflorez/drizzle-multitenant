@@ -481,7 +481,10 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
   - `column-analyzer.ts` - Análise de colunas
   - `index-analyzer.ts` - Análise de índices
   - `constraint-analyzer.ts` - Análise de constraints
-- [ ] `Seeder` - Seeding de tenants
+- [x] `Seeder` extraído (28 testes, ~340 linhas)
+  - `seeder.ts` - Classe principal (301 linhas)
+  - `types.ts` - Tipos internos (39 linhas)
+  - `index.ts` - Exports públicos
 - [ ] `SyncManager` - Sincronização de divergências
 - [ ] `MigrationExecutor` e `BatchExecutor`
 
@@ -502,7 +505,7 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
 3. [x] Implementar testes de caracterização
 4. [x] Extrair `SchemaManager`
 5. [x] Extrair `DriftDetector`
-6. [ ] Extrair `Seeder`
+6. [x] Extrair `Seeder`
 7. [ ] Extrair `SyncManager`
 8. [ ] Code review por módulo
 9. [ ] Atualizar documentação
