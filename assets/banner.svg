@@ -8,7 +8,7 @@
   </defs>
 
   <!-- Logo -->
-  <g transform="translate(120, 10) scale(0.19)">
+  <g transform="translate(85, 10) scale(0.19)">
     <!-- Arm 1 - Top Right (Teal Light) -->
     <path fill="#6AADAB" d="M2057 4503 c-11 -10 -8 -251 4 -386 12 -143 37 -228 85 -291 49 -65
     101 -91 235 -119 258 -55 463 -185 606 -385 124 -174 168 -391 113 -565 -12
@@ -56,7 +56,7 @@
   </g>
 
   <!-- Text with gradient -->
-  <text x="220" y="72" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700" fill="url(#textGradient)">
+  <text x="185" y="72" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="36" font-weight="700" fill="url(#textGradient)">
     drizzle-multitenant
   </text>
 </svg>

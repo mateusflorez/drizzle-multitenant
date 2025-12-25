@@ -1,5 +1,16 @@
 import { PoolManager } from './pool.js';
-import type { Config, TenantManager, TenantDb, SharedDb, WarmupOptions, WarmupResult, RetryConfig } from './types.js';
+import type {
+  Config,
+  TenantManager,
+  TenantDb,
+  SharedDb,
+  WarmupOptions,
+  WarmupResult,
+  RetryConfig,
+  HealthCheckOptions,
+  HealthCheckResult,
+  MetricsResult,
+} from './types.js';
 
 /**
  * Create a tenant manager instance
@@ -80,6 +91,14 @@ export function createTenantManager<
 
     async warmup(tenantIds: string[], options?: WarmupOptions): Promise<WarmupResult> {
       return poolManager.warmup(tenantIds, options);
+    },
+
+    async healthCheck(options?: HealthCheckOptions): Promise<HealthCheckResult> {
+      return poolManager.healthCheck(options);
+    },
+
+    getMetrics(): MetricsResult {
+      return poolManager.getMetrics();
     },
 
     async dispose(): Promise<void> {

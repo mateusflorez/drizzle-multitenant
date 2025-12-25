@@ -39,6 +39,13 @@ export type {
   WarmupResult,
   TenantWarmupResult,
   RetryConfig,
+  HealthCheckOptions,
+  HealthCheckResult,
+  PoolHealth,
+  PoolHealthStatus,
+  MetricsResult,
+  TenantPoolMetrics,
+  ConnectionMetrics,
 } from './types.js';
 
 export type { RetryResult } from './retry.js';
