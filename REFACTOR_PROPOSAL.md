@@ -507,9 +507,18 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
   - `health-checker.ts` - Classe principal com ping e health check
   - `index.ts` - Exports públicos
 
-### Fase 4: CLI Menu - PENDENTE
+### Fase 4: CLI Menu - CONCLUÍDA
 
-- [ ] Separar screens individuais
+- [x] `MenuRenderer` extraído (23 testes, ~200 linhas)
+  - `menu-renderer.ts` - Classe base de renderização
+  - `index.ts` - Exports públicos
+- [x] Screens individuais extraídas (25 testes, ~550 linhas total)
+  - `status-screen.ts` - Tela de status e detalhes (~130 linhas)
+  - `migrations-screen.ts` - Tela de migrações (~110 linhas)
+  - `tenants-screen.ts` - Tela de create/drop tenants (~170 linhas)
+  - `seeding-screen.ts` - Tela de seeding (~160 linhas)
+  - `generate-screen.ts` - Tela de geração (~50 linhas)
+- [x] `MainMenu` refatorado como orquestrador (~270 linhas)
 
 ## Próximos Passos
 
@@ -527,7 +536,9 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
 12. [x] Extrair `PoolCache`
 13. [x] Extrair `RetryHandler`
 14. [x] Extrair `HealthChecker`
-15. [ ] Iniciar Fase 4: CLI Menu
+15. [x] Iniciar Fase 4: CLI Menu
+16. [x] Extrair `MenuRenderer`
+17. [x] Extrair screens individuais
 
 ---
 
