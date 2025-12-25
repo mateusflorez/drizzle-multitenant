@@ -1,20 +1,36 @@
-# drizzle-multitenant
+<p align="center">
+  <img src="./assets/banner.svg" alt="drizzle-multitenant" width="500" />
+</p>
 
-[![npm version](https://img.shields.io/npm/v/drizzle-multitenant.svg)](https://www.npmjs.com/package/drizzle-multitenant)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](https://mateusflorez.github.io/drizzle-multitenant/)
+<p align="center">
+  <strong>Multi-tenancy toolkit for Drizzle ORM</strong>
+</p>
 
-Multi-tenancy toolkit for Drizzle ORM with schema isolation, tenant context, and parallel migrations.
+<p align="center">
+  Schema isolation, tenant context propagation, and parallel migrations for PostgreSQL
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/drizzle-multitenant"><img src="https://img.shields.io/npm/v/drizzle-multitenant.svg?style=flat-square&color=4A9A98" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/drizzle-multitenant"><img src="https://img.shields.io/npm/dm/drizzle-multitenant.svg?style=flat-square&color=3D5A80" alt="npm downloads"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-6AADAB.svg?style=flat-square" alt="License"></a>
+  <a href="https://mateusflorez.github.io/drizzle-multitenant/"><img src="https://img.shields.io/badge/docs-online-2B3E5C.svg?style=flat-square" alt="Documentation"></a>
+</p>
+
+<br />
 
 ## Features
 
-- **Schema Isolation** - PostgreSQL schema-per-tenant with LRU pool management
-- **Context Propagation** - AsyncLocalStorage-based tenant context
-- **Parallel Migrations** - Concurrent migrations with progress tracking
-- **Cross-Schema Queries** - Type-safe joins between tenant and shared tables
-- **Connection Retry** - Automatic retry with exponential backoff
-- **Framework Support** - Express, Fastify, NestJS middleware/plugins
-- **CLI Tools** - Generate, migrate, status, tenant management
+| Feature | Description |
+|---------|-------------|
+| **Schema Isolation** | PostgreSQL schema-per-tenant with automatic LRU pool management |
+| **Context Propagation** | AsyncLocalStorage-based tenant context across your entire stack |
+| **Parallel Migrations** | Apply migrations to all tenants concurrently with progress tracking |
+| **Cross-Schema Queries** | Type-safe joins between tenant and shared tables |
+| **Connection Retry** | Automatic retry with exponential backoff for transient failures |
+| **Framework Support** | First-class Express, Fastify, and NestJS integrations |
+
+<br />
 
 ## Installation
 
@@ -22,7 +38,11 @@ Multi-tenancy toolkit for Drizzle ORM with schema isolation, tenant context, and
 npm install drizzle-multitenant drizzle-orm pg
 ```
 
+<br />
+
 ## Quick Start
+
+### 1. Define your configuration
 
 ```typescript
 // tenant.config.ts
@@ -39,6 +59,8 @@ export default defineConfig({
 });
 ```
 
+### 2. Create the tenant manager
+
 ```typescript
 // app.ts
 import { createTenantManager } from 'drizzle-multitenant';
@@ -46,57 +68,126 @@ import config from './tenant.config';
 
 const tenants = createTenantManager(config);
 
-// Get typed DB for a tenant
-const db = tenants.getDb('tenant-123');
+// Type-safe database for each tenant
+const db = tenants.getDb('acme');
 const users = await db.select().from(schema.users);
-
-// With retry and validation
-const db = await tenants.getDbAsync('tenant-123');
 ```
 
-## CLI
+<br />
+
+## CLI Commands
 
 ```bash
-npx drizzle-multitenant init                    # Setup wizard
-npx drizzle-multitenant generate --name=users   # Create migration
-npx drizzle-multitenant migrate --all           # Apply to all tenants
-npx drizzle-multitenant status                  # Check status
+npx drizzle-multitenant init                     # Interactive setup wizard
+npx drizzle-multitenant generate --name=users    # Generate migration
+npx drizzle-multitenant migrate --all            # Apply to all tenants
+npx drizzle-multitenant status                   # Check migration status
+npx drizzle-multitenant tenant:create --id=acme  # Create new tenant
 ```
+
+<br />
 
 ## Framework Integrations
 
+<details>
+<summary><strong>Express</strong></summary>
+
 ```typescript
-// Express
 import { createExpressMiddleware } from 'drizzle-multitenant/express';
-app.use(createExpressMiddleware({ manager: tenants, extractTenantId: (req) => req.headers['x-tenant-id'] }));
 
-// Fastify
-import { fastifyTenantPlugin } from 'drizzle-multitenant/fastify';
-fastify.register(fastifyTenantPlugin, { manager: tenants, extractTenantId: (req) => req.headers['x-tenant-id'] });
+app.use(createExpressMiddleware({
+  manager: tenants,
+  extractTenantId: (req) => req.headers['x-tenant-id'] as string,
+}));
 
-// NestJS
-import { TenantModule, InjectTenantDb } from 'drizzle-multitenant/nestjs';
-@Module({ imports: [TenantModule.forRoot({ config, extractTenantId: (req) => req.headers['x-tenant-id'] })] })
+app.get('/users', async (req, res) => {
+  const db = req.tenantContext.db;
+  const users = await db.select().from(schema.users);
+  res.json(users);
+});
 ```
+
+</details>
+
+<details>
+<summary><strong>Fastify</strong></summary>
+
+```typescript
+import { fastifyTenantPlugin } from 'drizzle-multitenant/fastify';
+
+fastify.register(fastifyTenantPlugin, {
+  manager: tenants,
+  extractTenantId: (req) => req.headers['x-tenant-id'] as string,
+});
+
+fastify.get('/users', async (req, reply) => {
+  const db = req.tenantContext.db;
+  const users = await db.select().from(schema.users);
+  return users;
+});
+```
+
+</details>
+
+<details>
+<summary><strong>NestJS</strong></summary>
+
+```typescript
+import { TenantModule, InjectTenantDb } from 'drizzle-multitenant/nestjs';
+
+@Module({
+  imports: [
+    TenantModule.forRoot({
+      config,
+      extractTenantId: (req) => req.headers['x-tenant-id'],
+    }),
+  ],
+})
+export class AppModule {}
+
+@Injectable({ scope: Scope.REQUEST })
+export class UserService {
+  constructor(@InjectTenantDb() private db: TenantDb) {}
+
+  findAll() {
+    return this.db.select().from(users);
+  }
+}
+```
+
+</details>
+
+<br />
 
 ## Documentation
 
-**[Read the full documentation →](https://mateusflorez.github.io/drizzle-multitenant/)**
+<table>
+  <tr>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/getting-started">Getting Started</a></td>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/configuration">Configuration</a></td>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/cli">CLI Commands</a></td>
+  </tr>
+  <tr>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/frameworks/express">Express</a></td>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/frameworks/fastify">Fastify</a></td>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/frameworks/nestjs">NestJS</a></td>
+  </tr>
+  <tr>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/cross-schema">Cross-Schema Queries</a></td>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/advanced">Advanced Features</a></td>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/api/reference">API Reference</a></td>
+  </tr>
+</table>
 
-- [Getting Started](https://mateusflorez.github.io/drizzle-multitenant/guide/getting-started)
-- [Configuration](https://mateusflorez.github.io/drizzle-multitenant/guide/configuration)
-- [Framework Integrations](https://mateusflorez.github.io/drizzle-multitenant/guide/frameworks/express)
-- [CLI Commands](https://mateusflorez.github.io/drizzle-multitenant/guide/cli)
-- [Cross-Schema Queries](https://mateusflorez.github.io/drizzle-multitenant/guide/cross-schema)
-- [Advanced Features](https://mateusflorez.github.io/drizzle-multitenant/guide/advanced)
-- [API Reference](https://mateusflorez.github.io/drizzle-multitenant/api/reference)
-- [Examples](https://mateusflorez.github.io/drizzle-multitenant/examples/)
+<br />
 
 ## Requirements
 
 - Node.js 18+
 - PostgreSQL 12+
 - Drizzle ORM 0.29+
+
+<br />
 
 ## License
 
