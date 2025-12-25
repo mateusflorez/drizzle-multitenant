@@ -246,16 +246,134 @@ const metrics = manager.getMetrics();
 // }
 ```
 
-### Prometheus Integration
+### Built-in Prometheus Export
+
+drizzle-multitenant provides a `MetricsCollector` and `PrometheusExporter` for easy Prometheus integration:
 
 ```typescript
-import { Gauge } from 'prom-client';
+import { MetricsCollector, PrometheusExporter } from 'drizzle-multitenant/metrics';
 
-const poolGauge = new Gauge({ name: 'drizzle_pool_count', help: 'Active pools' });
+const collector = new MetricsCollector(manager);
+const exporter = new PrometheusExporter(collector);
+
+// Get Prometheus-formatted metrics
+const prometheusMetrics = await exporter.export();
+console.log(prometheusMetrics);
+```
+
+Output:
+
+```
+# HELP drizzle_multitenant_pool_active_total Active pools
+# TYPE drizzle_multitenant_pool_active_total gauge
+drizzle_multitenant_pool_active_total 5
+
+# HELP drizzle_multitenant_pool_max_total Maximum pools
+# TYPE drizzle_multitenant_pool_max_total gauge
+drizzle_multitenant_pool_max_total 50
+
+# HELP drizzle_multitenant_pool_connections_total Pool connections
+# TYPE drizzle_multitenant_pool_connections_total gauge
+drizzle_multitenant_pool_connections_total{tenant="abc",state="total"} 10
+drizzle_multitenant_pool_connections_total{tenant="abc",state="idle"} 7
+drizzle_multitenant_pool_connections_total{tenant="abc",state="waiting"} 0
+
+# HELP drizzle_multitenant_health_status Health status (1=healthy, 0=unhealthy)
+# TYPE drizzle_multitenant_health_status gauge
+drizzle_multitenant_health_status 1
+```
+
+### Express Integration
+
+```typescript
+import express from 'express';
+import { createMetricsMiddleware } from 'drizzle-multitenant/metrics';
+
+const app = express();
+
+// Add metrics endpoint
+app.use(createMetricsMiddleware(manager, {
+  path: '/metrics',
+  includeRuntime: true,
+  auth: {
+    username: process.env.METRICS_USER,
+    password: process.env.METRICS_PASS,
+  },
+}));
+
+// Your routes...
+app.get('/', (req, res) => res.send('Hello'));
+
+app.listen(3000);
+```
+
+Options:
+- `path` - Endpoint path (default: `/metrics`)
+- `includeRuntime` - Include Node.js runtime metrics
+- `auth` - Basic auth credentials for protecting the endpoint
+
+### Fastify Integration
+
+```typescript
+import Fastify from 'fastify';
+import { metricsPlugin } from 'drizzle-multitenant/metrics';
+
+const fastify = Fastify();
+
+// Register metrics plugin
+await fastify.register(metricsPlugin, {
+  manager,
+  path: '/metrics',
+  includeRuntime: true,
+});
+
+// Access metrics collector via decorator
+fastify.get('/custom-metrics', async (request, reply) => {
+  const metrics = await fastify.metricsCollector.collect();
+  return metrics;
+});
+
+await fastify.listen({ port: 3000 });
+```
+
+### CLI Metrics Command
+
+View metrics from the command line:
+
+```bash
+# Console output
+npx drizzle-multitenant metrics
+
+# Prometheus format
+npx drizzle-multitenant metrics --prometheus
+
+# Watch mode
+npx drizzle-multitenant metrics --watch --interval=5000
+
+# Include health check
+npx drizzle-multitenant metrics --health
+```
+
+### Manual Prometheus Integration
+
+If you prefer manual control:
+
+```typescript
+import { Gauge, Registry } from 'prom-client';
+
+const register = new Registry();
+
+const poolGauge = new Gauge({
+  name: 'drizzle_pool_count',
+  help: 'Active pools',
+  registers: [register],
+});
+
 const connectionsGauge = new Gauge({
   name: 'drizzle_connections',
   help: 'Connections by tenant',
-  labelNames: ['tenant', 'state']
+  labelNames: ['tenant', 'state'],
+  registers: [register],
 });
 
 app.get('/metrics', async (req, res) => {
@@ -270,6 +388,108 @@ app.get('/metrics', async (req, res) => {
   res.set('Content-Type', 'text/plain');
   res.send(await register.metrics());
 });
+```
+
+### Available Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `drizzle_multitenant_pool_active_total` | gauge | Number of active pools |
+| `drizzle_multitenant_pool_max_total` | gauge | Maximum configured pools |
+| `drizzle_multitenant_pool_connections_total` | gauge | Connections by tenant/state |
+| `drizzle_multitenant_shared_initialized` | gauge | Shared pool status |
+| `drizzle_multitenant_shared_connections` | gauge | Shared pool connections |
+| `drizzle_multitenant_health_status` | gauge | Overall health (1=ok) |
+| `drizzle_multitenant_health_pools_total` | gauge | Total pools checked |
+| `drizzle_multitenant_health_pools_degraded` | gauge | Degraded pools count |
+| `drizzle_multitenant_health_pools_unhealthy` | gauge | Unhealthy pools count |
+| `drizzle_multitenant_health_response_time_ms` | gauge | Health check duration |
+
+## Doctor Command
+
+Diagnose configuration and connection issues with the doctor command:
+
+```bash
+npx drizzle-multitenant doctor
+```
+
+Output:
+
+```
+🔍 Checking drizzle-multitenant configuration...
+
+✓ Configuration file found: tenant.config.ts
+✓ Database connection: OK (PostgreSQL 15.4, latency: 12ms)
+✓ Tenant discovery: Found 42 tenants
+✓ Migrations folder: ./drizzle/tenant-migrations (12 files)
+✓ Shared migrations folder: ./drizzle/shared-migrations (3 files)
+✓ Schema isolation: schema-based
+✓ Pool configuration: max=50, ttl=3600000ms
+
+⚠ Recommendations:
+  1. Consider increasing maxPools (current: 50, tenants: 42)
+  2. Enable metrics collection for production monitoring
+
+📊 Health Summary:
+  Pools: 5 active, 0 degraded, 0 unhealthy
+  Shared DB: OK (12ms latency)
+```
+
+### What Doctor Checks
+
+| Check | Description |
+|-------|-------------|
+| Configuration file | Validates tenant.config.ts exists and is valid |
+| Database connection | Tests PostgreSQL connectivity, version, latency |
+| Tenant discovery | Counts tenants returned by discovery function |
+| Migrations folder | Validates folder exists and counts migration files |
+| Shared migrations | Checks shared migrations folder if configured |
+| Schema isolation | Validates isolation strategy configuration |
+| Pool configuration | Checks maxPools and poolTtlMs settings |
+
+### JSON Output
+
+```bash
+npx drizzle-multitenant doctor --json
+```
+
+```json
+{
+  "success": true,
+  "checks": [
+    { "name": "configuration", "status": "ok", "message": "tenant.config.ts" },
+    { "name": "database", "status": "ok", "message": "PostgreSQL 15.4", "latencyMs": 12 },
+    { "name": "tenants", "status": "ok", "message": "42 tenants found" },
+    { "name": "migrations", "status": "ok", "message": "12 files" },
+    { "name": "sharedMigrations", "status": "ok", "message": "3 files" },
+    { "name": "isolation", "status": "ok", "message": "schema-based" },
+    { "name": "poolConfig", "status": "warn", "message": "maxPools close to tenant count" }
+  ],
+  "recommendations": [
+    "Consider increasing maxPools (current: 50, tenants: 42)",
+    "Enable metrics collection for production monitoring"
+  ],
+  "health": {
+    "healthy": true,
+    "totalPools": 5,
+    "degradedPools": 0,
+    "unhealthyPools": 0,
+    "sharedDbLatencyMs": 12
+  }
+}
+```
+
+### Use in CI/CD
+
+```yaml
+# .github/workflows/health.yml
+- name: Check database configuration
+  run: |
+    npx drizzle-multitenant doctor --json > doctor-report.json
+    if ! jq -e '.success' doctor-report.json; then
+      echo "Doctor check failed"
+      exit 1
+    fi
 ```
 
 ## Lifecycle Hooks

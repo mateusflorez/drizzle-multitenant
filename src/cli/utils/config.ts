@@ -17,6 +17,10 @@ export interface LoadedConfig {
   migrationsFolder?: string;
   migrationsTable?: string;
   tenantDiscovery?: () => Promise<string[]>;
+  /** Path to shared schema migrations folder */
+  sharedMigrationsFolder?: string;
+  /** Table name for tracking shared migrations */
+  sharedMigrationsTable?: string;
 }
 
 /**
@@ -69,9 +73,11 @@ export async function loadConfig(configPath?: string): Promise<LoadedConfig> {
 
   return {
     config: exported,
-    migrationsFolder: exported.migrations?.tenantFolder,
-    migrationsTable: exported.migrations?.migrationsTable,
+    migrationsFolder: exported.migrations?.tenantFolder ?? exported.migrations?.folder,
+    migrationsTable: exported.migrations?.migrationsTable ?? exported.migrations?.table,
     tenantDiscovery: exported.migrations?.tenantDiscovery,
+    sharedMigrationsFolder: exported.migrations?.sharedFolder,
+    sharedMigrationsTable: exported.migrations?.sharedTable,
   };
 }
 

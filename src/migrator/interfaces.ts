@@ -303,6 +303,22 @@ export interface ISeeder<TSchema extends Record<string, unknown> = Record<string
 }
 
 // ============================================================================
+// Shared Seeder Interfaces
+// ============================================================================
+
+import type { SharedSeedFunction, SharedSeedResult } from './types.js';
+
+/**
+ * Responsible for seeding the shared schema
+ */
+export interface ISharedSeeder<TSchema extends Record<string, unknown> = Record<string, unknown>> {
+  /**
+   * Seed the shared schema with initial data
+   */
+  seed(seedFn: SharedSeedFunction<TSchema>): Promise<SharedSeedResult>;
+}
+
+// ============================================================================
 // Migration File Loader Interfaces
 // ============================================================================
 

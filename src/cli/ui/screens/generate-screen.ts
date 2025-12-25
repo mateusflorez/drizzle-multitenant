@@ -47,4 +47,34 @@ export class GenerateScreen {
     await this.renderer.pressEnterToContinue();
     return { type: 'back' };
   }
+
+  /**
+   * Show generate shared migration screen
+   */
+  async showShared(): Promise<ScreenAction> {
+    this.renderer.clearScreen();
+    this.renderer.showHeader('Generate Shared Migration');
+
+    const name = await input({
+      message: 'Shared migration name:',
+      validate: (value) => {
+        if (!value.trim()) return 'Migration name cannot be empty';
+        if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(value)) {
+          return 'Invalid migration name format';
+        }
+        return true;
+      },
+    });
+
+    console.log('');
+    console.log(chalk.dim('  To generate a shared migration, run:'));
+    console.log('');
+    console.log(chalk.cyan(`  npx drizzle-multitenant generate:shared --name=${name}`));
+    console.log('');
+    console.log(chalk.dim('  This will create a migration for the public schema.'));
+    console.log('');
+
+    await this.renderer.pressEnterToContinue();
+    return { type: 'back' };
+  }
 }

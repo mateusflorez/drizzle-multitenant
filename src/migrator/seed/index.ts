@@ -1,15 +1,21 @@
 /**
- * Tenant Seeding Module
+ * Tenant and Shared Schema Seeding Module
  *
- * Provides tools for seeding tenant databases with initial data
+ * Provides tools for seeding tenant and shared databases with initial data
  * in a multi-tenant application.
  *
  * @module seed
  *
  * @example
  * ```typescript
- * import { Seeder, createSeeder } from 'drizzle-multitenant/migrator/seed';
+ * import {
+ *   Seeder,
+ *   createSeeder,
+ *   SharedSeeder,
+ *   createSharedSeeder,
+ * } from 'drizzle-multitenant/migrator/seed';
  *
+ * // Tenant seeding
  * const seeder = createSeeder(
  *   { tenantDiscovery: async () => ['tenant-1', 'tenant-2'] },
  *   {
@@ -19,21 +25,39 @@
  *   }
  * );
  *
- * // Seed a single tenant
  * await seeder.seedTenant('tenant-1', async (db, tenantId) => {
  *   await db.insert(roles).values([{ name: 'admin' }]);
  * });
  *
- * // Seed all tenants
- * await seeder.seedAll(seedFn, { concurrency: 10 });
+ * // Shared schema seeding
+ * const sharedSeeder = createSharedSeeder(
+ *   { schemaName: 'public' },
+ *   {
+ *     createPool: () => schemaManager.createPool('public'),
+ *     sharedSchema: sharedSchemaDefinition,
+ *   }
+ * );
+ *
+ * await sharedSeeder.seed(async (db) => {
+ *   await db.insert(plans).values([
+ *     { id: 'free', name: 'Free', price: 0 },
+ *   ]).onConflictDoNothing();
+ * });
  * ```
  */
 
-// Main class and factory
+// Main classes and factories
 export { Seeder, createSeeder } from './seeder.js';
+export { SharedSeeder, createSharedSeeder } from './shared-seeder.js';
 
 // Types
-export type { SeederConfig, SeederDependencies } from './types.js';
+export type {
+  SeederConfig,
+  SeederDependencies,
+  SharedSeederConfig,
+  SharedSeederDependencies,
+  SharedSeederHooks,
+} from './types.js';
 
 // Re-export public types from main types.ts for convenience
 export type {
@@ -41,4 +65,6 @@ export type {
   SeedOptions,
   TenantSeedResult,
   SeedResults,
+  SharedSeedFunction,
+  SharedSeedResult,
 } from '../types.js';

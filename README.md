@@ -24,10 +24,13 @@
 | Feature | Description |
 |---------|-------------|
 | **Schema Isolation** | PostgreSQL schema-per-tenant with automatic LRU pool management |
-| **Context Propagation** | AsyncLocalStorage-based tenant context across your entire stack |
+| **Shared Schema** | Full support for shared schema migrations and seeding (plans, roles, permissions) |
 | **Parallel Migrations** | Apply migrations to all tenants concurrently with progress tracking |
 | **Cross-Schema Queries** | Type-safe joins between tenant and shared tables |
-| **Connection Retry** | Automatic retry with exponential backoff for transient failures |
+| **Schema Linting** | Validate schemas with 8 configurable rules (naming, conventions, security) |
+| **Scaffolding** | Generate schemas, seeds, and migrations from templates |
+| **Export/Import** | Export to JSON Schema, TypeScript types, or Mermaid ERD diagrams |
+| **Observability** | Built-in Prometheus exporter with Express/Fastify integrations |
 | **Framework Support** | First-class Express, Fastify, and NestJS integrations |
 
 <br />
@@ -78,11 +81,23 @@ const users = await db.select().from(schema.users);
 ## CLI Commands
 
 ```bash
-npx drizzle-multitenant init                     # Interactive setup wizard
-npx drizzle-multitenant generate --name=users    # Generate migration
+# Setup & Migrations
+npx drizzle-multitenant init --template=full     # Enhanced setup wizard
+npx drizzle-multitenant generate --name=users    # Generate tenant migration
+npx drizzle-multitenant generate:shared --name=plans  # Generate shared migration
 npx drizzle-multitenant migrate --all            # Apply to all tenants
+npx drizzle-multitenant migrate:shared           # Apply shared migrations
+
+# Developer Tools
+npx drizzle-multitenant scaffold:schema orders   # Generate schema file
+npx drizzle-multitenant lint                     # Validate schemas
+npx drizzle-multitenant doctor                   # Diagnose configuration
+npx drizzle-multitenant export --format=mermaid  # Export ERD diagram
+
+# Tenant Management
 npx drizzle-multitenant status                   # Check migration status
 npx drizzle-multitenant tenant:create --id=acme  # Create new tenant
+npx drizzle-multitenant seed:all                 # Seed shared + tenants
 ```
 
 <br />
@@ -168,14 +183,19 @@ export class UserService {
     <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/cli">CLI Commands</a></td>
   </tr>
   <tr>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/shared-schema">Shared Schema</a></td>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/scaffold">Scaffolding</a></td>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/schema-linting">Schema Linting</a></td>
+  </tr>
+  <tr>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/export-import">Export & Import</a></td>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/cross-schema">Cross-Schema Queries</a></td>
+    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/advanced">Advanced Features</a></td>
+  </tr>
+  <tr>
     <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/frameworks/express">Express</a></td>
     <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/frameworks/fastify">Fastify</a></td>
     <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/frameworks/nestjs">NestJS</a></td>
-  </tr>
-  <tr>
-    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/cross-schema">Cross-Schema Queries</a></td>
-    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/guide/advanced">Advanced Features</a></td>
-    <td><a href="https://mateusflorez.github.io/drizzle-multitenant/api/reference">API Reference</a></td>
   </tr>
 </table>
 

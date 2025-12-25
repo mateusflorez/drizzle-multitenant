@@ -18,6 +18,11 @@ export type {
   ClonerConfig,
   ClonerDependencies,
 } from './clone/types.js';
+export { SharedMigrationExecutor, createSharedMigrationExecutor } from './shared/index.js';
+export type {
+  SharedMigrationExecutorConfig,
+  SharedMigrationExecutorDependencies,
+} from './shared/types.js';
 export { detectTableFormat, getFormatConfig, DEFAULT_FORMAT, DRIZZLE_KIT_FORMAT } from './table-format.js';
 export type { TableFormat, DetectedFormat } from './table-format.js';
 export type {
@@ -65,4 +70,12 @@ export type {
   AnonymizeOptions,
   AnonymizeRules,
   AnonymizeValue,
+  // Shared schema migration types
+  SharedMigrationStatus,
+  SharedMigrationResult,
+  SharedMigratorConfig,
+  SharedMigrationHooks,
+  SharedMigrateOptions,
+  SharedSeedFunction,
+  SharedSeedResult,
 } from './types.js';

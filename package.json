@@ -1,6 +1,6 @@
 {
   "name": "drizzle-multitenant",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Multi-tenancy toolkit for Drizzle ORM with schema isolation, tenant context, and parallel migrations",
   "type": "module",
   "main": "./dist/index.js",
@@ -34,6 +34,22 @@
     "./cross-schema": {
       "import": "./dist/cross-schema/index.js",
       "types": "./dist/cross-schema/index.d.ts"
+    },
+    "./scaffold": {
+      "import": "./dist/scaffold/index.js",
+      "types": "./dist/scaffold/index.d.ts"
+    },
+    "./lint": {
+      "import": "./dist/lint/index.js",
+      "types": "./dist/lint/index.d.ts"
+    },
+    "./metrics": {
+      "import": "./dist/metrics/index.js",
+      "types": "./dist/metrics/index.d.ts"
+    },
+    "./export": {
+      "import": "./dist/export/index.js",
+      "types": "./dist/export/index.d.ts"
     }
   },
   "bin": {
@@ -73,6 +89,7 @@
     "cli-progress": "^3.12.0",
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
+    "glob": "^13.0.0",
     "lru-cache": "^10.4.3",
     "ora": "^8.2.0"
   },

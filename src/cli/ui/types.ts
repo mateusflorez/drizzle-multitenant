@@ -9,6 +9,8 @@ export interface MenuContext {
   migrationsFolder: string;
   migrationsTable?: string | undefined;
   tenantDiscovery: () => Promise<string[]>;
+  /** Path to shared migrations folder (optional) */
+  sharedMigrationsFolder?: string | undefined;
 }
 
 /**

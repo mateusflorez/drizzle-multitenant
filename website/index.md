@@ -23,9 +23,9 @@ features:
     link: /guide/configuration
     linkText: Configure isolation
   - icon: 🔄
-    title: Context Propagation
-    details: AsyncLocalStorage-based tenant context flows through your entire request lifecycle. No parameter drilling required.
-    link: /guide/getting-started#use-context-propagation
+    title: Shared Schema Management
+    details: Full support for shared schema migrations and seeding. Manage plans, roles, and permissions alongside tenant data.
+    link: /guide/shared-schema
     linkText: Learn more
   - icon: ⚡
     title: Parallel Migrations
@@ -37,16 +37,16 @@ features:
     details: Type-safe queries joining tenant and shared tables. Automatic schema detection with full Drizzle ORM support.
     link: /guide/cross-schema
     linkText: Query builder
-  - icon: 💚
-    title: Health Checks & Metrics
-    details: Monitor pool health for load balancers. Export metrics to Prometheus, Datadog, or any observability platform.
-    link: /guide/advanced#health-checks
+  - icon: 📊
+    title: Observability & Metrics
+    details: Built-in Prometheus exporter, Express/Fastify integrations, health checks, and doctor command for diagnostics.
+    link: /guide/advanced#metrics
     linkText: Observability
   - icon: 🛠️
-    title: Interactive CLI
-    details: Menu-driven interface for tenant management, migrations, seeding, schema drift detection, and cloning.
-    link: /guide/cli#interactive-menu
-    linkText: CLI commands
+    title: Developer Tools
+    details: Schema scaffolding, linting with 8 rules, export to JSON/TypeScript/Mermaid, and enhanced init wizard.
+    link: /guide/scaffold
+    linkText: Developer tools
 ---
 
 <style>

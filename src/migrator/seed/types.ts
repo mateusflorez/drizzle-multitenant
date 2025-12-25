@@ -36,3 +36,41 @@ export interface SeederDependencies<
   /** Tenant schema definition */
   tenantSchema: TTenantSchema;
 }
+
+// ============================================================================
+// Shared Seeder Types
+// ============================================================================
+
+/**
+ * Configuration for the SharedSeeder
+ */
+export interface SharedSeederConfig {
+  /** Schema name for shared data (default: 'public') */
+  schemaName?: string;
+  /** Lifecycle hooks */
+  hooks?: SharedSeederHooks;
+}
+
+/**
+ * Lifecycle hooks for shared seeding
+ */
+export interface SharedSeederHooks {
+  /** Called before seeding starts */
+  onStart?: () => void | Promise<void>;
+  /** Called after seeding completes successfully */
+  onComplete?: () => void | Promise<void>;
+  /** Called when seeding fails */
+  onError?: (error: Error) => void | Promise<void>;
+}
+
+/**
+ * SharedSeeder dependencies
+ */
+export interface SharedSeederDependencies<
+  TSharedSchema extends Record<string, unknown> = Record<string, unknown>,
+> {
+  /** Pool creation for the shared schema */
+  createPool: () => Promise<import('pg').Pool>;
+  /** Shared schema definition */
+  sharedSchema: TSharedSchema;
+}

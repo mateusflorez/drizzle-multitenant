@@ -167,6 +167,25 @@ export interface MigratorConfig {
    * @default "name"
    */
   defaultFormat?: TableFormat;
+
+  // ============================================================================
+  // Shared Schema Migration Options
+  // ============================================================================
+
+  /**
+   * Path to shared schema migrations folder
+   * If provided, enables shared schema migration support
+   */
+  sharedMigrationsFolder?: string;
+  /**
+   * Table name for tracking shared migrations
+   * @default "__drizzle_shared_migrations"
+   */
+  sharedMigrationsTable?: string;
+  /**
+   * Hooks for shared schema migrations
+   */
+  sharedHooks?: SharedMigrationHooks;
 }
 
 /**
@@ -508,3 +527,113 @@ export type {
   AnonymizeRules,
   AnonymizeValue,
 } from './clone/types.js';
+
+// ============================================================================
+// Shared Schema Migration Types
+// ============================================================================
+
+/**
+ * Migration status for the shared schema (public)
+ */
+export interface SharedMigrationStatus {
+  /** Schema name (usually 'public') */
+  schemaName: string;
+  /** Number of applied migrations */
+  appliedCount: number;
+  /** Number of pending migrations */
+  pendingCount: number;
+  /** Names of pending migrations */
+  pendingMigrations: string[];
+  /** Overall status */
+  status: 'ok' | 'behind' | 'error';
+  /** Error message if status is 'error' */
+  error?: string;
+  /** Detected table format */
+  format: TableFormat | null;
+}
+
+/**
+ * Migration result for the shared schema
+ */
+export interface SharedMigrationResult {
+  /** Schema name (usually 'public') */
+  schemaName: string;
+  /** Whether migration was successful */
+  success: boolean;
+  /** List of applied migration names */
+  appliedMigrations: string[];
+  /** Error message if failed */
+  error?: string;
+  /** Duration in milliseconds */
+  durationMs: number;
+  /** Table format used */
+  format?: TableFormat;
+}
+
+/**
+ * Shared migration configuration (extends MigratorConfig)
+ */
+export interface SharedMigratorConfig {
+  /** Path to shared schema migrations folder */
+  sharedMigrationsFolder: string;
+  /** Table name for tracking shared migrations (default: '__drizzle_shared_migrations') */
+  sharedMigrationsTable?: string;
+  /** Migration hooks for shared schema */
+  hooks?: SharedMigrationHooks;
+  /**
+   * Table format for tracking migrations
+   * @default "auto"
+   */
+  tableFormat?: 'auto' | TableFormat;
+  /**
+   * Default format when creating new table
+   * @default "name"
+   */
+  defaultFormat?: TableFormat;
+}
+
+/**
+ * Hooks for shared schema migrations
+ */
+export interface SharedMigrationHooks {
+  /** Called before starting shared migration */
+  beforeMigration?: () => void | Promise<void>;
+  /** Called after shared migration completes */
+  afterMigration?: (result: SharedMigrationResult) => void | Promise<void>;
+  /** Called before applying a specific migration */
+  beforeApply?: (migrationName: string) => void | Promise<void>;
+  /** Called after applying a specific migration */
+  afterApply?: (migrationName: string, durationMs: number) => void | Promise<void>;
+}
+
+/**
+ * Options for shared migration operations
+ */
+export interface SharedMigrateOptions {
+  /** Dry run mode - show what would be applied without executing */
+  dryRun?: boolean;
+  /** Progress callback */
+  onProgress?: (status: 'starting' | 'migrating' | 'completed' | 'failed', migrationName?: string) => void;
+}
+
+/**
+ * Seed function signature for shared schema
+ * Called with the shared database instance
+ */
+export type SharedSeedFunction<TSchema extends Record<string, unknown> = Record<string, unknown>> = (
+  db: PostgresJsDatabase<TSchema>
+) => Promise<void>;
+
+/**
+ * Result of shared schema seeding
+ */
+export interface SharedSeedResult {
+  /** Schema name (usually 'public') */
+  schemaName: string;
+  /** Whether seeding was successful */
+  success: boolean;
+  /** Error message if failed */
+  error?: string;
+  /** Duration in milliseconds */
+  durationMs: number;
+}

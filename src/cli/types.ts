@@ -288,3 +288,117 @@ export interface DiffSummary {
   error: number;
   durationMs: number;
 }
+
+/**
+ * JSON output for the doctor command
+ */
+export interface DoctorJsonOutput {
+  healthy: boolean;
+  checks: DoctorCheck[];
+  recommendations: DoctorRecommendation[];
+  database?: {
+    version: string;
+    latencyMs: number;
+  };
+  tenantCount?: number;
+  poolConfig?: {
+    maxPools: number;
+    poolTtlMs: number;
+  };
+  durationMs: number;
+}
+
+export interface DoctorCheck {
+  name: string;
+  status: 'ok' | 'warn' | 'error';
+  message: string;
+  details?: string;
+}
+
+export interface DoctorRecommendation {
+  priority: 'high' | 'medium' | 'low';
+  message: string;
+  action?: string;
+}
+
+/**
+ * Options for the doctor command
+ */
+export interface DoctorOptions extends GlobalOptions {
+  config?: string;
+}
+
+/**
+ * Options for the lint command
+ */
+export interface LintOptions extends GlobalOptions {
+  config?: string;
+  tenantSchema?: string;
+  sharedSchema?: string;
+  format?: 'console' | 'json' | 'github';
+  fix?: boolean;
+  rule?: string[];
+  ignoreRule?: string[];
+}
+
+/**
+ * JSON output for the lint command
+ */
+export interface LintJsonOutput {
+  passed: boolean;
+  summary: {
+    totalFiles: number;
+    totalTables: number;
+    totalColumns: number;
+    errors: number;
+    warnings: number;
+  };
+  files: Array<{
+    filePath: string;
+    issues: Array<{
+      rule: string;
+      severity: 'warn' | 'error';
+      message: string;
+      filePath: string;
+      table?: string;
+      column?: string;
+      line?: number;
+      suggestion?: string;
+    }>;
+    tables: number;
+    columns: number;
+  }>;
+  durationMs: number;
+}
+
+/**
+ * Options for the export command
+ */
+export interface ExportCommandOptions extends GlobalOptions {
+  config?: string;
+  tenantSchema?: string;
+  sharedSchema?: string;
+  format?: 'json' | 'typescript' | 'mermaid';
+  output?: string;
+  projectName?: string;
+  includeMetadata?: boolean;
+  includeZod?: boolean;
+  insertTypes?: boolean;
+  selectTypes?: boolean;
+  mermaidTheme?: string;
+  includeIndexes?: boolean;
+  jsonSchema?: boolean;
+}
+
+/**
+ * Options for the import command
+ */
+export interface ImportCommandOptions extends GlobalOptions {
+  output?: string;
+  overwrite?: boolean;
+  tenant?: boolean;
+  shared?: boolean;
+  includeZod?: boolean;
+  types?: boolean;
+  dryRun?: boolean;
+}

@@ -3,10 +3,12 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import {
   migrateCommand,
+  migrateSharedCommand,
   statusCommand,
   syncCommand,
   diffCommand,
   generateCommand,
+  generateSharedCommand,
   tenantCreateCommand,
   tenantDropCommand,
   tenantCloneCommand,
@@ -15,6 +17,17 @@ import {
   completionCommand,
   interactiveCommand,
   seedCommand,
+  seedSharedCommand,
+  seedAllCommand,
+  doctorCommand,
+  scaffoldCommand,
+  scaffoldSchemaCommand,
+  scaffoldSeedCommand,
+  scaffoldMigrationCommand,
+  lintCommand,
+  metricsCommand,
+  exportCommand,
+  importCommand,
 } from './commands/index.js';
 import { initOutputContext } from './utils/output.js';
 import { mainMenu } from './ui/menu.js';
@@ -65,6 +78,16 @@ Examples:
   $ drizzle-multitenant migrate --tenant=my-tenant --dry-run
   $ drizzle-multitenant generate --name add-users-table
   $ drizzle-multitenant tenant:create --id new-tenant
+  $ drizzle-multitenant scaffold:schema orders --type=tenant
+  $ drizzle-multitenant scaffold:seed initial --type=tenant
+  $ drizzle-multitenant scaffold:migration add-orders --type=tenant
+  $ drizzle-multitenant lint --tenant-schema=./src/db/schema/tenant
+  $ drizzle-multitenant lint --format=github
+  $ drizzle-multitenant metrics --health
+  $ drizzle-multitenant metrics --prometheus
+  $ drizzle-multitenant export --format=typescript -o schemas.d.ts
+  $ drizzle-multitenant export --format=mermaid -o erd.md
+  $ drizzle-multitenant import schemas.json -o ./src/db/schema
   $ drizzle-multitenant status --json | jq '.summary'
 
 Documentation:
@@ -73,10 +96,12 @@ Documentation:
 
 // Register commands
 program.addCommand(migrateCommand);
+program.addCommand(migrateSharedCommand);
 program.addCommand(statusCommand);
 program.addCommand(syncCommand);
 program.addCommand(diffCommand);
 program.addCommand(generateCommand);
+program.addCommand(generateSharedCommand);
 program.addCommand(tenantCreateCommand);
 program.addCommand(tenantDropCommand);
 program.addCommand(tenantCloneCommand);
@@ -85,6 +110,17 @@ program.addCommand(initCommand);
 program.addCommand(completionCommand);
 program.addCommand(interactiveCommand);
 program.addCommand(seedCommand);
+program.addCommand(seedSharedCommand);
+program.addCommand(seedAllCommand);
+program.addCommand(doctorCommand);
+program.addCommand(scaffoldCommand);
+program.addCommand(scaffoldSchemaCommand);
+program.addCommand(scaffoldSeedCommand);
+program.addCommand(scaffoldMigrationCommand);
+program.addCommand(lintCommand);
+program.addCommand(metricsCommand);
+program.addCommand(exportCommand);
+program.addCommand(importCommand);
 
 // Default action: launch interactive mode when no command is specified
 program.action(async () => {

@@ -1,0 +1,713 @@
+# Proposal: Shared Schema Management Enhancement
+
+**Date:** 2025-12-25
+**Status:** In Progress
+**Author:** Auto-generated proposal
+**Last Updated:** 2025-12-25
+
+---
+
+## Executive Summary
+
+Expandir o `drizzle-multitenant` para incluir gerenciamento completo de **shared schemas**, transformando-o no toolkit definitivo para multi-tenancy com Drizzle ORM. O foco é preencher gaps não atendidos pelo ecossistema atual.
+
+---
+
+## Análise do Estado Atual
+
+### O que já existe no projeto
+
+| Feature | Status | Localização |
+|---------|--------|-------------|
+| Tenant migrations | Completo | `src/migrator/` |
+| Tenant seeding | Completo | `src/cli/commands/seed.ts` |
+| Health checks | Completo | `src/pool/health/` |
+| Cross-schema queries | Completo | `src/cross-schema/` |
+| Init wizard | Básico | `src/cli/commands/init.ts` |
+| Drift detection | Completo | `src/migrator/drift/` |
+| CLI interativa | Completo | `src/cli/ui/` |
+
+### Gaps identificados
+
+1. ~~**Shared schema migrations** - Não há suporte para migrar o schema `public`~~ ✅ **Implementado**
+2. ~~**Shared schema seeding** - Seeds só funcionam para tenants~~ ✅ **Implementado**
+3. ~~**Project scaffolding** - Sem geração de boilerplate~~ ✅ **Implementado**
+4. ~~**Schema validation** - Sem linting ou validação de convenções~~ ✅ **Implementado**
+5. ~~**Init wizard limitado** - Não gera estrutura de pastas completa~~ ✅ **Implementado**
+6. ~~**Export/Import schemas** - Compartilhar schemas entre projetos~~ ✅ **Implementado**
+
+---
+
+## Propostas de Features
+
+### 1. Shared Schema Migrations ✅ IMPLEMENTADO
+
+**Problema:** Tabelas compartilhadas (plans, roles, permissions) não têm suporte de migração.
+
+**Solução:**
+
+```bash
+# Estrutura de pastas
+drizzle/
+├── tenant-migrations/     # Migrações de tenant (já existe)
+│   ├── 0001_create_users.sql
+│   └── 0002_add_profiles.sql
+├── shared-migrations/     # NOVO: Migrações do schema public
+│   ├── 0001_create_plans.sql
+│   └── 0002_create_roles.sql
+└── seeds/
+    ├── tenant/
+    └── shared/
+```
+
+**CLI Commands:**
+
+```bash
+# Gerar migração para shared schema
+npx drizzle-multitenant generate:shared --name=add-plans
+
+# Aplicar migrações do shared schema
+npx drizzle-multitenant migrate:shared
+
+# Status unificado
+npx drizzle-multitenant status --include-shared
+```
+
+**API Programática:**
+
+```typescript
+import { createMigrator } from 'drizzle-multitenant/migrator';
+
+const migrator = createMigrator(config, {
+  // Tenant migrations (já existe)
+  migrationsFolder: './drizzle/tenant-migrations',
+
+  // NOVO: Shared migrations
+  sharedMigrationsFolder: './drizzle/shared-migrations',
+});
+
+// Migrar shared primeiro, depois tenants
+await migrator.migrateShared();
+await migrator.migrateAll({ concurrency: 10 });
+```
+
+**Configuração:**
+
+```typescript
+// tenant.config.ts
+export default defineConfig({
+  // ... existing config
+
+  migrations: {
+    folder: './drizzle/tenant-migrations',
+    sharedFolder: './drizzle/shared-migrations', // NOVO
+    table: '__drizzle_migrations',
+    sharedTable: '__drizzle_shared_migrations', // NOVO
+  },
+});
+```
+
+---
+
+### 2. Shared Schema Seeding ✅ IMPLEMENTADO
+
+**Problema:** Dados iniciais compartilhados (planos, roles padrão) precisam de setup manual.
+
+**Solução:**
+
+```typescript
+// seeds/shared/plans.ts
+import { SeedFunction } from 'drizzle-multitenant';
+
+export const seed: SeedFunction = async (db) => {
+  await db.insert(plans).values([
+    { id: 'free', name: 'Free', price: 0 },
+    { id: 'pro', name: 'Pro', price: 29 },
+    { id: 'enterprise', name: 'Enterprise', price: 99 },
+  ]).onConflictDoNothing();
+};
+```
+
+**CLI:**
+
+```bash
+# Seed do shared schema
+npx drizzle-multitenant seed:shared --file=./seeds/shared/plans.ts
+
+# Seed completo (shared + tenants)
+npx drizzle-multitenant seed:all \
+  --shared-file=./seeds/shared/plans.ts \
+  --tenant-file=./seeds/tenant/initial.ts
+```
+
+---
+
+### 3. Enhanced Init Wizard ✅ IMPLEMENTADO
+
+**Problema:** O init atual gera apenas config, sem estrutura de projeto.
+
+**Solução expandida:**
+
+```bash
+npx drizzle-multitenant init --template=full
+```
+
+**Wizard interativo melhorado:**
+
+```
+🚀 drizzle-multitenant Setup Wizard
+
+? Project template:
+  ❯ Minimal (config only)
+    Standard (config + folder structure)
+    Full (config + folders + example schemas)
+    Enterprise (full + CI/CD + Docker)
+
+? Framework integration:
+  ❯ None (standalone)
+    Express
+    Fastify
+    NestJS
+    Hono
+
+? Features to include:
+  ☑ Shared schema support
+  ☑ Cross-schema queries
+  ☑ Health check endpoints
+  ☐ Metrics (Prometheus)
+  ☐ Debug mode
+
+? Database setup:
+  ❯ I'll configure manually
+    Generate docker-compose.yml
+    Use existing DATABASE_URL
+```
+
+**Estrutura gerada (template: full):**
+
+```
+project/
+├── tenant.config.ts
+├── docker-compose.yml              # NOVO
+├── drizzle/
+│   ├── tenant-migrations/
+│   │   └── .gitkeep
+│   ├── shared-migrations/          # NOVO
+│   │   └── .gitkeep
+│   └── seeds/
+│       ├── tenant/
+│       │   └── initial.ts          # NOVO: Example seed
+│       └── shared/
+│           └── plans.ts            # NOVO: Example seed
+├── src/
+│   └── db/
+│       ├── schema/
+│       │   ├── tenant/
+│       │   │   └── users.ts        # NOVO: Example schema
+│       │   └── shared/
+│       │       └── plans.ts        # NOVO: Example schema
+│       └── index.ts                # NOVO: DB setup
+└── .env.example                    # NOVO
+```
+
+---
+
+### 4. Scaffold Command ✅ IMPLEMENTADO
+
+**Problema:** Criar novos componentes requer copiar/colar código boilerplate.
+
+**Solução:**
+
+```bash
+# Gerar schema de tenant
+npx drizzle-multitenant scaffold:schema orders --type=tenant
+# Cria: src/db/schema/tenant/orders.ts
+
+# Gerar schema compartilhado
+npx drizzle-multitenant scaffold:schema plans --type=shared
+# Cria: src/db/schema/shared/plans.ts
+
+# Gerar seed
+npx drizzle-multitenant scaffold:seed initial --type=tenant
+# Cria: drizzle/seeds/tenant/initial.ts
+
+# Gerar migração com template
+npx drizzle-multitenant scaffold:migration add-orders --type=tenant
+# Abre editor com template SQL
+```
+
+**Templates gerados:**
+
+```typescript
+// src/db/schema/tenant/orders.ts (gerado)
+import { pgTable, uuid, text, timestamp, numeric } from 'drizzle-orm/pg-core';
+import { users } from './users';
+
+export const orders = pgTable('orders', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id),
+  status: text('status').notNull().default('pending'),
+  total: numeric('total', { precision: 10, scale: 2 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Indexes
+export const ordersIndexes = {
+  userIdIdx: index('orders_user_id_idx').on(orders.userId),
+  statusIdx: index('orders_status_idx').on(orders.status),
+};
+```
+
+---
+
+### 5. Schema Validation & Linting ✅ IMPLEMENTADO
+
+**Problema:** Inconsistências entre schemas de tenants e convenções não seguidas.
+
+**Solução:**
+
+```bash
+# Validar schemas
+npx drizzle-multitenant lint
+
+# Output:
+# ⚠ tenant/users.ts: Missing 'updatedAt' column (convention)
+# ⚠ tenant/orders.ts: Missing index on foreign key 'userId'
+# ✗ shared/plans.ts: Using 'serial' instead of 'uuid' for primary key
+# ✓ 12 schemas validated, 2 warnings, 1 error
+```
+
+**Regras configuráveis:**
+
+```typescript
+// tenant.config.ts
+export default defineConfig({
+  // ...
+
+  lint: {
+    rules: {
+      // Convenções de naming
+      'table-naming': ['error', { style: 'snake_case' }],
+      'column-naming': ['error', { style: 'snake_case' }],
+
+      // Boas práticas
+      'require-primary-key': 'error',
+      'prefer-uuid-pk': 'warn',
+      'require-timestamps': 'warn',
+      'index-foreign-keys': 'warn',
+
+      // Segurança
+      'no-cascade-delete': 'warn',
+      'require-soft-delete': 'off',
+    },
+  },
+});
+```
+
+**Integração CI:**
+
+```yaml
+# .github/workflows/lint.yml
+- name: Lint database schemas
+  run: npx drizzle-multitenant lint --format=github
+```
+
+---
+
+### 6. Doctor Command
+
+**Problema:** Troubleshooting de problemas de configuração é manual.
+
+**Solução:**
+
+```bash
+npx drizzle-multitenant doctor
+
+# Output:
+# 🔍 Checking drizzle-multitenant configuration...
+#
+# ✓ Configuration file found: tenant.config.ts
+# ✓ Database connection: OK (PostgreSQL 15.4)
+# ✓ Tenant discovery: Found 42 tenants
+# ✓ Migrations folder: ./drizzle/tenant-migrations (12 files)
+# ⚠ Shared migrations folder: Not configured
+# ✓ Schema isolation: schema-based
+# ✓ Pool configuration: max=10, ttl=3600000ms
+#
+# ⚠ Recommendations:
+#   1. Configure sharedFolder for shared schema migrations
+#   2. Consider increasing maxPools (current: 50, tenants: 42)
+#
+# 📊 Health Summary:
+#   Pools: 5 active, 0 degraded, 0 unhealthy
+#   Shared DB: OK (12ms latency)
+```
+
+---
+
+### 7. Interactive UI Enhancements ✅ IMPLEMENTADO (Parcial)
+
+**Problema:** A UI interativa não cobre shared schemas.
+
+**Solução:** Adicionar telas para shared schema management.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  drizzle-multitenant v1.3.0                             │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ❯ 1. Tenant Migrations                                 │
+│    2. Shared Migrations          ← NOVO                 │
+│    3. Tenant Status                                     │
+│    4. Shared Status              ← NOVO                 │
+│    5. Seeding                                           │
+│    6. Health Check                                      │
+│    7. Generate Migration                                │
+│    8. Schema Lint                ← NOVO                 │
+│    9. Doctor                     ← NOVO                 │
+│    0. Exit                                              │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 8. Export/Import Schemas ✅ IMPLEMENTADO
+
+**Problema:** Compartilhar definições de schema entre projetos é difícil.
+
+**Solução:**
+
+```bash
+# Exportar schemas como JSON Schema
+npx drizzle-multitenant export --format=json > schemas.json
+
+# Exportar como TypeScript types
+npx drizzle-multitenant export --format=typescript > schemas.d.ts
+
+# Exportar como diagrama ERD (Mermaid)
+npx drizzle-multitenant export --format=mermaid > erd.md
+
+# Importar schema de outro projeto
+npx drizzle-multitenant import schemas.json -o ./src/db/schema
+```
+
+---
+
+## Priorização
+
+### Phase 1: Core Shared Schema (v1.3.0)
+- [x] Shared schema migrations ✅
+- [x] Shared schema seeding ✅
+- [x] Enhanced init wizard ✅
+- [x] Doctor command ✅
+
+### Phase 2: Developer Experience (v1.4.0)
+- [x] Scaffold command ✅
+- [x] Schema linting ✅
+- [x] Interactive UI enhancements (shared migrations) ✅
+
+### Phase 3: Advanced Features (v1.5.0)
+- [x] Export/Import schemas ✅
+- [ ] CI/CD templates
+- [x] Metrics dashboard integration ✅
+
+---
+
+## Implementação Técnica
+
+### Estrutura de arquivos proposta
+
+```
+src/
+├── migrator/
+│   └── shared/                      # ✅ IMPLEMENTADO
+│       ├── index.ts
+│       ├── shared-migration-executor.ts
+│       └── types.ts
+│   └── seed/
+│       ├── shared-seeder.ts         # ✅ IMPLEMENTADO
+│       └── shared-seeder.test.ts    # ✅ IMPLEMENTADO
+├── cli/
+│   ├── commands/
+│   │   ├── init.ts                  # ✅ IMPLEMENTADO (enhanced wizard)
+│   │   ├── generate-shared.ts       # ✅ IMPLEMENTADO
+│   │   ├── migrate-shared.ts        # ✅ IMPLEMENTADO
+│   │   ├── seed-shared.ts           # ✅ IMPLEMENTADO
+│   │   ├── seed-all.ts              # ✅ IMPLEMENTADO
+│   │   ├── scaffold.ts              # ✅ IMPLEMENTADO
+│   │   ├── lint.ts                  # ✅ IMPLEMENTADO
+│   │   ├── doctor.ts                # ✅ IMPLEMENTADO
+│   │   └── export.ts                # PENDENTE
+│   ├── init/                        # ✅ IMPLEMENTADO (enhanced wizard)
+│   │   ├── index.ts
+│   │   ├── types.ts
+│   │   └── generators/
+│   │       ├── index.ts
+│   │       ├── config-generator.ts
+│   │       ├── structure-generator.ts
+│   │       ├── docker-generator.ts
+│   │       └── framework-generator.ts
+│   └── ui/
+│       └── screens/
+│           ├── seeding-screen.ts    # ✅ ATUALIZADO (shared seeding support)
+│           ├── lint-screen.ts       # ✅ IMPLEMENTADO
+│           └── metrics-screen.ts    # ✅ IMPLEMENTADO
+├── metrics/                         # ✅ IMPLEMENTADO
+│   ├── index.ts
+│   ├── types.ts                     # ✅ Prometheus types
+│   ├── collector.ts                 # ✅ MetricsCollector class
+│   ├── prometheus.ts                # ✅ PrometheusExporter class
+│   ├── express.ts                   # ✅ Express middleware
+│   ├── fastify.ts                   # ✅ Fastify plugin
+│   └── metrics.test.ts              # ✅ 22 tests
+├── lint/                            # ✅ IMPLEMENTADO
+│   ├── index.ts
+│   ├── linter.ts                    # ✅ SchemaLinter class
+│   ├── parser.ts                    # ✅ Schema parser
+│   ├── reporter.ts                  # ✅ Console/JSON/GitHub reporters
+│   ├── types.ts                     # ✅ Lint types
+│   └── rules/
+│       ├── index.ts
+│       ├── naming.ts                # ✅ table-naming, column-naming
+│       ├── conventions.ts           # ✅ require-primary-key, prefer-uuid-pk, etc.
+│       └── security.ts              # ✅ no-cascade-delete, require-soft-delete
+├── export/                          # ✅ IMPLEMENTADO
+│   ├── index.ts
+│   ├── types.ts                     # ✅ Export/Import types
+│   ├── schema-exporter.ts           # ✅ Main exporter class
+│   ├── json-schema-exporter.ts      # ✅ JSON Schema format
+│   ├── typescript-exporter.ts       # ✅ TypeScript types format
+│   ├── mermaid-exporter.ts          # ✅ Mermaid ERD format
+│   ├── importer.ts                  # ✅ Schema importer
+│   ├── export.test.ts               # ✅ 53 tests
+│   └── importer.test.ts             # ✅ 34 tests
+└── scaffold/                        # ✅ IMPLEMENTADO
+    ├── index.ts
+    ├── types.ts
+    ├── generator.ts
+    ├── generator.test.ts
+    └── templates/
+        ├── index.ts
+        ├── schema-template.ts
+        ├── seed-template.ts
+        ├── migration-template.ts
+        └── templates.test.ts
+```
+
+### Breaking Changes
+
+**Nenhum.** Todas as features são aditivas e opcionais.
+
+### Backward Compatibility
+
+- Configuração existente continua funcionando
+- Novos campos são opcionais
+- CLI mantém comandos atuais
+
+---
+
+## Considerações
+
+### Vantagens
+
+1. **Diferenciação** - Nenhum pacote oferece esse conjunto de features
+2. **Completude** - Cobre todo o ciclo de vida de multi-tenancy
+3. **DX** - Reduz boilerplate e erros comuns
+4. **Adoção** - Facilita onboarding de novos projetos
+
+### Riscos
+
+1. **Escopo** - Features demais podem diluir o foco
+2. **Manutenção** - Mais código = mais bugs potenciais
+3. **Complexidade** - Pode intimidar usuários simples
+
+### Mitigações
+
+1. Manter features como opt-in
+2. Documentação clara de cada feature
+3. Templates para diferentes níveis de complexidade
+
+---
+
+## Próximos Passos
+
+1. [ ] Validar proposta com usuários (GitHub Discussions)
+2. [x] Priorizar Phase 1 features ✅
+3. [ ] Criar issues detalhadas para cada feature
+4. [x] Começar implementação do shared migrations ✅
+
+---
+
+## Changelog
+
+### 2025-12-25 (Export/Import Schemas)
+- ✅ Implementado módulo `export` em `src/export/`
+- ✅ Implementado `SchemaExporter` para exportar schemas Drizzle
+- ✅ Implementado `JsonSchemaExporter` para formato JSON Schema
+  - Mapeamento completo de tipos PostgreSQL para JSON Schema
+  - Suporte a primary keys, foreign keys, nullable, defaults
+  - Geração de definitions com relacionamentos
+- ✅ Implementado `TypeScriptExporter` para tipos TypeScript
+  - Geração de interfaces para select/insert
+  - Suporte a Zod schemas opcionais
+  - JSDoc comments para colunas especiais
+- ✅ Implementado `MermaidExporter` para diagramas ERD
+  - Suporte a temas (default, dark, forest, neutral)
+  - Exibição de relacionamentos entre tabelas
+  - Marcação de PK/FK e indexes opcionais
+- ✅ Implementado `SchemaImporter` para importar schemas de JSON
+  - Geração de arquivos Drizzle schema completos
+  - Suporte a Zod e TypeScript types opcionais
+  - Geração de barrel files (index.ts)
+  - Modo dry-run para preview
+- ✅ Implementado comando CLI `export` com opções:
+  - `--format`: json, typescript, mermaid
+  - `--output`: Arquivo de saída
+  - `--include-metadata`: Metadados no JSON
+  - `--include-zod`: Schemas Zod no TypeScript
+  - `--json-schema`: Formato JSON Schema
+- ✅ Implementado comando CLI `import` com opções:
+  - `--output`: Diretório de saída
+  - `--overwrite`: Sobrescrever arquivos existentes
+  - `--include-zod`: Incluir Zod schemas
+  - `--dry-run`: Preview sem escrita
+- ✅ Exportação via `drizzle-multitenant/export` no package.json
+- ✅ Adicionados 87 testes unitários
+- ✅ Todos os 998 testes passando
+
+### 2025-12-25 (Metrics Dashboard Integration)
+- ✅ Implementado módulo `metrics` em `src/metrics/`
+- ✅ Implementado `MetricsCollector` para agregar métricas de pool, health e runtime
+- ✅ Implementado `PrometheusExporter` para exportar métricas em formato Prometheus text
+  - Suporte a 17+ métricas diferentes
+  - Métricas de pool: active, max, connections (total/idle/waiting), last access
+  - Métricas de shared pool: initialized, connections
+  - Métricas de health: status, pools total/degraded/unhealthy, response times
+  - Métricas de runtime: uptime, memory (heap/external/rss), handles, requests
+- ✅ Implementado middleware Express para expor endpoint `/metrics`
+  - Suporte a autenticação básica
+  - Suporte a métricas de runtime opcionais
+- ✅ Implementado plugin Fastify para expor endpoint `/metrics`
+  - Decoradores `metricsCollector` e `metricsExporter`
+  - Schema OpenAPI para documentação
+- ✅ Implementado comando CLI `metrics` com opções:
+  - `--health`: Incluir health check (pode ser lento)
+  - `--prometheus`: Saída em formato Prometheus text
+  - `--watch`: Modo watch com refresh periódico
+  - `--interval`: Intervalo de refresh em ms
+- ✅ Implementado `MetricsScreen` para UI interativa
+  - Visualização de pool metrics
+  - Visualização de health check
+  - Export Prometheus com syntax highlighting
+  - Visualização de runtime metrics
+- ✅ Exportação via `drizzle-multitenant/metrics` no package.json
+- ✅ Adicionados 22 testes unitários
+- ✅ Todos os 911 testes passando
+
+### 2025-12-25 (Schema Linting)
+- ✅ Implementado módulo `lint` em `src/lint/`
+- ✅ Implementado `SchemaLinter` classe principal para validação de schemas
+- ✅ Implementadas 8 regras de linting configuráveis:
+  - `table-naming`: Valida convenção de nomes de tabelas (snake_case por padrão)
+  - `column-naming`: Valida convenção de nomes de colunas (snake_case por padrão)
+  - `require-primary-key`: Exige primary key em todas as tabelas
+  - `prefer-uuid-pk`: Recomenda UUID ao invés de serial para PKs
+  - `require-timestamps`: Exige colunas created_at/updated_at
+  - `index-foreign-keys`: Exige índices em foreign keys
+  - `no-cascade-delete`: Avisa sobre CASCADE DELETE
+  - `require-soft-delete`: Exige coluna de soft delete
+- ✅ Implementado parser de schemas Drizzle para extração de metadados
+- ✅ Implementados 3 formatos de reporter: console, json, github (CI)
+- ✅ Implementado comando CLI `lint` com opções:
+  - `--tenant-schema`: Diretório de schemas tenant
+  - `--shared-schema`: Diretório de schemas shared
+  - `--format`: Formato de output (console/json/github)
+  - `--rule`: Habilitar regras específicas
+  - `--ignore-rule`: Desabilitar regras específicas
+- ✅ Implementado `LintScreen` para UI interativa
+- ✅ Adicionada configuração `lint` no `defineConfig` do types.ts
+- ✅ Exportação via `drizzle-multitenant/lint` no package.json
+- ✅ Adicionados 77 testes unitários
+- ✅ Build passando sem erros
+
+### 2025-12-25 (Scaffold Command)
+- ✅ Implementado módulo `scaffold` em `src/scaffold/`
+- ✅ Implementado comando CLI `scaffold:schema` para gerar schemas Drizzle
+  - Suporte a tenant e shared schemas
+  - Opções: timestamps, soft delete, UUID/serial, example columns
+  - Modo interativo com `--interactive`
+  - Geração de Zod schemas e tipos TypeScript
+- ✅ Implementado comando CLI `scaffold:seed` para gerar arquivos de seed
+  - Suporte a tenant e shared seeds
+  - Template com import de tabela opcional
+  - Exemplos de uso do CLI nos comentários
+- ✅ Implementado comando CLI `scaffold:migration` para gerar migrações SQL
+  - 5 templates: create-table, add-column, add-index, add-foreign-key, blank
+  - Inferência automática de template baseada no nome
+  - Numeração sequencial automática (0001, 0002, etc.)
+- ✅ Adicionado módulo `src/scaffold/templates/` com templates reutilizáveis
+- ✅ Exportação via `drizzle-multitenant/scaffold` no package.json
+- ✅ Suporte a output JSON (`--json` flag)
+- ✅ Adicionados 60 testes unitários
+- ✅ Todos os 812 testes passando
+
+### 2025-12-25 (Doctor Command)
+- ✅ Implementado comando `doctor` em `src/cli/commands/doctor.ts`
+- ✅ Verifica arquivo de configuração
+- ✅ Testa conexão com banco de dados PostgreSQL (versão e latência)
+- ✅ Verifica tenant discovery (quantidade de tenants)
+- ✅ Verifica pasta de migrations (tenant e shared)
+- ✅ Verifica configuração de schema isolation
+- ✅ Verifica configuração de pool (maxPools, poolTtlMs)
+- ✅ Gera recomendações baseadas nas verificações
+- ✅ Suporte a output JSON (--json flag)
+- ✅ Adicionados tipos `DoctorJsonOutput`, `DoctorCheck`, `DoctorRecommendation`
+- ✅ Adicionados 14 testes unitários
+- ✅ Todos os 122 testes da CLI passando
+
+### 2025-12-25 (Enhanced Init Wizard)
+- ✅ Implementado wizard interativo melhorado em `src/cli/commands/init.ts`
+- ✅ Adicionado suporte a 4 templates de projeto: Minimal, Standard, Full, Enterprise
+- ✅ Adicionado suporte a integração com frameworks: Express, Fastify, NestJS, Hono
+- ✅ Implementado seletor de features (shared schema, cross-schema, health checks, etc.)
+- ✅ Implementado gerador de docker-compose.yml
+- ✅ Implementado gerador de estrutura de pastas completa
+- ✅ Implementado gerador de schemas de exemplo (tenant e shared)
+- ✅ Implementado gerador de seeds de exemplo
+- ✅ Implementado gerador de arquivos CI/CD para template Enterprise
+- ✅ Adicionado módulo `src/cli/init/` com tipos e geradores
+- ✅ Adicionados 54 testes unitários para os geradores
+- ✅ Todos os testes passando
+
+### 2025-12-25 (Shared Schema Seeding)
+- ✅ Implementado `SharedSeeder` em `src/migrator/seed/shared-seeder.ts`
+- ✅ Implementado comando CLI `seed-shared`
+- ✅ Implementado comando CLI `seed-all` (shared + tenants)
+- ✅ Atualizado `SeedingScreen` na UI interativa com suporte a shared seeding
+- ✅ Adicionado método `seedShared()` no Migrator
+- ✅ Adicionado método `seedAllWithShared()` no Migrator
+- ✅ Adicionado método `hasSharedSeeding()` no Migrator
+- ✅ Adicionada interface `ISharedSeeder` em interfaces.ts
+- ✅ Exportados tipos `SharedSeedFunction` e `SharedSeedResult`
+- ✅ Todos os 684 testes passando
+
+### 2025-12-25 (Shared Schema Migrations)
+- ✅ Implementado `SharedMigrationExecutor` em `src/migrator/shared/`
+- ✅ Implementado comando CLI `migrate:shared`
+- ✅ Implementado comando CLI `generate:shared`
+- ✅ Integrado shared migrations na UI interativa
+- ✅ Adicionado suporte a `sharedMigrationsFolder` no `MigratorConfig`
+- ✅ Adicionado método `migrateShared()` no Migrator
+- ✅ Adicionado método `getSharedStatus()` no Migrator
+- ✅ Adicionado método `migrateAllWithShared()` no Migrator
+- ✅ Todos os 674 testes passando
+
+---
+
+## Referências
+
+- [Drizzle Kit Documentation](https://orm.drizzle.team/docs/kit-overview)
+- [Atlas + Drizzle Integration](https://atlasgo.io/guides/orms/drizzle/getting-started)
+- [Multi-tenancy Patterns](https://docs.microsoft.com/en-us/azure/architecture/guide/multitenant/considerations/tenancy-models)
