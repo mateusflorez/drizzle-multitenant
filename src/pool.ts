@@ -1,6 +1,5 @@
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { LRUCache } from 'lru-cache';
 import type {
   Config,
   PoolEntry,
@@ -20,6 +19,7 @@ import type {
 import { DEFAULT_CONFIG as defaults } from './types.js';
 import { createDebugLogger, DebugLogger } from './debug.js';
 import { withRetry, isRetryableError } from './retry.js';
+import { PoolCache } from './pool/cache/index.js';
 
 /**
  * Pool manager that handles tenant database connections with LRU eviction
@@ -28,7 +28,7 @@ export class PoolManager<
   TTenantSchema extends Record<string, unknown>,
   TSharedSchema extends Record<string, unknown>,
 > {
-  private readonly pools: LRUCache<string, PoolEntry<TTenantSchema>>;
+  private readonly poolCache: PoolCache<TTenantSchema>;
   private readonly tenantIdBySchema: Map<string, string> = new Map();
   private readonly pendingConnections: Map<string, Promise<PoolEntry<TTenantSchema>>> = new Map();
   private sharedPool: Pool | null = null;
@@ -41,6 +41,7 @@ export class PoolManager<
 
   constructor(private readonly config: Config<TTenantSchema, TSharedSchema>) {
     const maxPools = config.isolation.maxPools ?? defaults.maxPools;
+    const poolTtlMs = config.isolation.poolTtlMs ?? defaults.poolTtlMs;
 
     this.debugLogger = createDebugLogger(config.debug);
 
@@ -56,12 +57,12 @@ export class PoolManager<
       onRetry: userRetry.onRetry,
     };
 
-    this.pools = new LRUCache<string, PoolEntry<TTenantSchema>>({
-      max: maxPools,
-      dispose: (entry, key) => {
-        this.disposePoolEntry(entry, key);
+    this.poolCache = new PoolCache<TTenantSchema>({
+      maxPools,
+      poolTtlMs,
+      onDispose: (schemaName, entry) => {
+        this.disposePoolEntry(entry, schemaName);
       },
-      noDisposeOnSet: true,
     });
   }
 
@@ -72,11 +73,11 @@ export class PoolManager<
     this.ensureNotDisposed();
 
     const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
-    let entry = this.pools.get(schemaName);
+    let entry = this.poolCache.get(schemaName);
 
     if (!entry) {
       entry = this.createPoolEntry(tenantId, schemaName);
-      this.pools.set(schemaName, entry);
+      this.poolCache.set(schemaName, entry);
       this.tenantIdBySchema.set(schemaName, tenantId);
 
       // Log pool creation
@@ -86,7 +87,7 @@ export class PoolManager<
       void this.config.hooks?.onPoolCreated?.(tenantId);
     }
 
-    entry.lastAccess = Date.now();
+    this.poolCache.touch(schemaName);
     return entry.db;
   }
 
@@ -109,10 +110,10 @@ export class PoolManager<
     this.ensureNotDisposed();
 
     const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
-    let entry = this.pools.get(schemaName);
+    let entry = this.poolCache.get(schemaName);
 
     if (entry) {
-      entry.lastAccess = Date.now();
+      this.poolCache.touch(schemaName);
       return entry.db;
     }
 
@@ -120,7 +121,7 @@ export class PoolManager<
     const pending = this.pendingConnections.get(schemaName);
     if (pending) {
       entry = await pending;
-      entry.lastAccess = Date.now();
+      this.poolCache.touch(schemaName);
       return entry.db;
     }
 
@@ -130,7 +131,7 @@ export class PoolManager<
 
     try {
       entry = await connectionPromise;
-      this.pools.set(schemaName, entry);
+      this.poolCache.set(schemaName, entry);
       this.tenantIdBySchema.set(schemaName, tenantId);
 
       // Log pool creation
@@ -139,7 +140,7 @@ export class PoolManager<
       // Fire hook asynchronously
       void this.config.hooks?.onPoolCreated?.(tenantId);
 
-      entry.lastAccess = Date.now();
+      this.poolCache.touch(schemaName);
       return entry.db;
     } finally {
       this.pendingConnections.delete(schemaName);
@@ -323,14 +324,14 @@ export class PoolManager<
    */
   hasPool(tenantId: string): boolean {
     const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
-    return this.pools.has(schemaName);
+    return this.poolCache.has(schemaName);
   }
 
   /**
    * Get count of active pools
    */
   getPoolCount(): number {
-    return this.pools.size;
+    return this.poolCache.size();
   }
 
   /**
@@ -445,7 +446,7 @@ export class PoolManager<
     const maxPools = this.config.isolation.maxPools ?? defaults.maxPools;
     const tenantMetrics: TenantPoolMetrics[] = [];
 
-    for (const [schemaName, entry] of this.pools.entries()) {
+    for (const [schemaName, entry] of this.poolCache.entries()) {
       const tenantId = this.tenantIdBySchema.get(schemaName) ?? schemaName;
       const pool = entry.pool;
 
@@ -530,14 +531,14 @@ export class PoolManager<
       // Check only specified tenants
       for (const tenantId of tenantIds) {
         const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
-        const entry = this.pools.get(schemaName);
+        const entry = this.poolCache.get(schemaName);
         if (entry) {
           poolsToCheck.push({ schemaName, tenantId, entry });
         }
       }
     } else {
       // Check all active pools
-      for (const [schemaName, entry] of this.pools.entries()) {
+      for (const [schemaName, entry] of this.poolCache.entries()) {
         const tenantId = this.tenantIdBySchema.get(schemaName) ?? schemaName;
         poolsToCheck.push({ schemaName, tenantId, entry });
       }
@@ -705,13 +706,13 @@ export class PoolManager<
    */
   async evictPool(tenantId: string, reason: string = 'manual'): Promise<void> {
     const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
-    const entry = this.pools.get(schemaName);
+    const entry = this.poolCache.get(schemaName);
 
     if (entry) {
       // Log eviction
       this.debugLogger.logPoolEvicted(tenantId, schemaName, reason);
 
-      this.pools.delete(schemaName);
+      this.poolCache.delete(schemaName);
       this.tenantIdBySchema.delete(schemaName);
       await this.closePool(entry.pool, tenantId);
     }
@@ -723,11 +724,10 @@ export class PoolManager<
   startCleanup(): void {
     if (this.cleanupInterval) return;
 
-    const poolTtlMs = this.config.isolation.poolTtlMs ?? defaults.poolTtlMs;
     const cleanupIntervalMs = defaults.cleanupIntervalMs;
 
     this.cleanupInterval = setInterval(() => {
-      void this.cleanupIdlePools(poolTtlMs);
+      void this.cleanupIdlePools();
     }, cleanupIntervalMs);
 
     // Don't prevent process exit
@@ -756,12 +756,12 @@ export class PoolManager<
     // Close all tenant pools
     const closePromises: Promise<void>[] = [];
 
-    for (const [schemaName, entry] of this.pools.entries()) {
+    for (const [schemaName, entry] of this.poolCache.entries()) {
       const tenantId = this.tenantIdBySchema.get(schemaName);
       closePromises.push(this.closePool(entry.pool, tenantId ?? schemaName));
     }
 
-    this.pools.clear();
+    await this.poolCache.clear();
     this.tenantIdBySchema.clear();
 
     // Close shared pool
@@ -838,20 +838,14 @@ export class PoolManager<
   /**
    * Cleanup pools that have been idle for too long
    */
-  private async cleanupIdlePools(poolTtlMs: number): Promise<void> {
-    const now = Date.now();
-    const toEvict: string[] = [];
+  private async cleanupIdlePools(): Promise<void> {
+    const evictedSchemas = await this.poolCache.evictExpired();
 
-    for (const [schemaName, entry] of this.pools.entries()) {
-      if (now - entry.lastAccess > poolTtlMs) {
-        toEvict.push(schemaName);
-      }
-    }
-
-    for (const schemaName of toEvict) {
+    for (const schemaName of evictedSchemas) {
       const tenantId = this.tenantIdBySchema.get(schemaName);
       if (tenantId) {
-        await this.evictPool(tenantId, 'ttl_expired');
+        this.debugLogger.logPoolEvicted(tenantId, schemaName, 'ttl_expired');
+        this.tenantIdBySchema.delete(schemaName);
       }
     }
   }

@@ -495,9 +495,11 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
   - `types.ts` - Tipos internos (~70 linhas)
   - `index.ts` - Exports públicos
 
-### Fase 3: PoolManager - PENDENTE
+### Fase 3: PoolManager - EM PROGRESSO
 
-- [ ] `PoolCache` - Cache LRU
+- [x] `PoolCache` extraído (28 testes, ~180 linhas)
+  - `pool-cache.ts` - Classe principal com LRU eviction
+  - `index.ts` - Exports públicos
 - [ ] `RetryHandler` - Lógica de retry
 - [ ] `HealthChecker` - Health checks
 
@@ -517,7 +519,10 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
 8. [x] Extrair `MigrationExecutor` e `BatchExecutor`
 9. [ ] Code review por módulo
 10. [ ] Atualizar documentação
-11. [ ] Iniciar Fase 3: PoolManager
+11. [x] Iniciar Fase 3: PoolManager
+12. [x] Extrair `PoolCache`
+13. [ ] Extrair `RetryHandler`
+14. [ ] Extrair `HealthChecker`
 
 ---
 
