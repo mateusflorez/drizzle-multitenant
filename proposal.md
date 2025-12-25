@@ -142,7 +142,7 @@ npx drizzle-multitenant seed:all \
 
 ---
 
-### 3. Enhanced Init Wizard
+### 3. Enhanced Init Wizard ✅ IMPLEMENTADO
 
 **Problema:** O init atual gera apenas config, sem estrutura de projeto.
 
@@ -400,7 +400,7 @@ npx drizzle-multitenant import --from=./other-project/schemas.json
 ### Phase 1: Core Shared Schema (v1.3.0)
 - [x] Shared schema migrations ✅
 - [x] Shared schema seeding ✅
-- [ ] Enhanced init wizard
+- [x] Enhanced init wizard ✅
 - [ ] Doctor command
 
 ### Phase 2: Developer Experience (v1.4.0)
@@ -431,6 +431,7 @@ src/
 │       └── shared-seeder.test.ts    # ✅ IMPLEMENTADO
 ├── cli/
 │   ├── commands/
+│   │   ├── init.ts                  # ✅ IMPLEMENTADO (enhanced wizard)
 │   │   ├── generate-shared.ts       # ✅ IMPLEMENTADO
 │   │   ├── migrate-shared.ts        # ✅ IMPLEMENTADO
 │   │   ├── seed-shared.ts           # ✅ IMPLEMENTADO
@@ -439,10 +440,19 @@ src/
 │   │   ├── lint.ts                  # PENDENTE
 │   │   ├── doctor.ts                # PENDENTE
 │   │   └── export.ts                # PENDENTE
+│   ├── init/                        # ✅ IMPLEMENTADO (enhanced wizard)
+│   │   ├── index.ts
+│   │   ├── types.ts
+│   │   └── generators/
+│   │       ├── index.ts
+│   │       ├── config-generator.ts
+│   │       ├── structure-generator.ts
+│   │       ├── docker-generator.ts
+│   │       └── framework-generator.ts
 │   └── ui/
 │       └── screens/
 │           ├── seeding-screen.ts    # ✅ ATUALIZADO (shared seeding support)
-│           └── lint-screen.ts                 # PENDENTE
+│           └── lint-screen.ts       # PENDENTE
 ├── lint/                            # PENDENTE
 │   ├── index.ts
 │   ├── rules/
@@ -504,6 +514,20 @@ src/
 ---
 
 ## Changelog
+
+### 2025-12-25 (Enhanced Init Wizard)
+- ✅ Implementado wizard interativo melhorado em `src/cli/commands/init.ts`
+- ✅ Adicionado suporte a 4 templates de projeto: Minimal, Standard, Full, Enterprise
+- ✅ Adicionado suporte a integração com frameworks: Express, Fastify, NestJS, Hono
+- ✅ Implementado seletor de features (shared schema, cross-schema, health checks, etc.)
+- ✅ Implementado gerador de docker-compose.yml
+- ✅ Implementado gerador de estrutura de pastas completa
+- ✅ Implementado gerador de schemas de exemplo (tenant e shared)
+- ✅ Implementado gerador de seeds de exemplo
+- ✅ Implementado gerador de arquivos CI/CD para template Enterprise
+- ✅ Adicionado módulo `src/cli/init/` com tipos e geradores
+- ✅ Adicionados 54 testes unitários para os geradores
+- ✅ Todos os testes passando
 
 ### 2025-12-25 (Shared Schema Seeding)
 - ✅ Implementado `SharedSeeder` em `src/migrator/seed/shared-seeder.ts`
