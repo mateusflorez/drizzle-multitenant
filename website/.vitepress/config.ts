@@ -48,6 +48,10 @@ export default defineConfig({
           text: 'Features',
           items: [
             { text: 'CLI Commands', link: '/guide/cli' },
+            { text: 'Shared Schema', link: '/guide/shared-schema' },
+            { text: 'Scaffolding', link: '/guide/scaffold' },
+            { text: 'Schema Linting', link: '/guide/schema-linting' },
+            { text: 'Export & Import', link: '/guide/export-import' },
             { text: 'Cross-Schema Queries', link: '/guide/cross-schema' },
             { text: 'Advanced', link: '/guide/advanced' },
             { text: 'Migration Formats', link: '/guide/migration-formats' },

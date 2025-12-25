@@ -391,3 +391,295 @@ interface ConnectionMetrics {
   idle: number;
   waiting: number;
 }
+```
+
+## Metrics Module
+
+```typescript
+import {
+  MetricsCollector,
+  PrometheusExporter,
+  createMetricsMiddleware, // Express
+  metricsPlugin,           // Fastify
+} from 'drizzle-multitenant/metrics';
+```
+
+### MetricsCollector
+
+```typescript
+const collector = new MetricsCollector(manager);
+
+// Collect all metrics
+const metrics = await collector.collect();
+// {
+//   pools: { active: 5, max: 50, tenants: [...] },
+//   shared: { initialized: true, connections: {...} },
+//   health: { healthy: true, ... },
+//   runtime: { uptime: 3600, memory: {...} },
+//   timestamp: '2024-01-15T10:30:00Z'
+// }
+
+// Collect with options
+const metrics = await collector.collect({
+  includeHealth: true,
+  includeRuntime: true,
+});
+```
+
+### PrometheusExporter
+
+```typescript
+const exporter = new PrometheusExporter(collector);
+
+// Export as Prometheus text format
+const text = await exporter.export();
+// # HELP drizzle_multitenant_pool_active_total Active pools
+// # TYPE drizzle_multitenant_pool_active_total gauge
+// drizzle_multitenant_pool_active_total 5
+// ...
+```
+
+### Express Middleware
+
+```typescript
+import { createMetricsMiddleware } from 'drizzle-multitenant/metrics';
+
+app.use(createMetricsMiddleware(manager, {
+  path: '/metrics',
+  includeRuntime: true,
+  auth: { username: 'admin', password: 'secret' },
+}));
+```
+
+### Fastify Plugin
+
+```typescript
+import { metricsPlugin } from 'drizzle-multitenant/metrics';
+
+await fastify.register(metricsPlugin, {
+  manager,
+  path: '/metrics',
+});
+
+// Decorators available
+fastify.metricsCollector  // MetricsCollector
+fastify.metricsExporter   // PrometheusExporter
+```
+
+## Linting Module
+
+```typescript
+import { SchemaLinter, LintRule } from 'drizzle-multitenant/lint';
+```
+
+### SchemaLinter
+
+```typescript
+const linter = new SchemaLinter({
+  rules: {
+    'table-naming': ['error', { style: 'snake_case' }],
+    'require-primary-key': 'error',
+    'prefer-uuid-pk': 'warn',
+  },
+});
+
+const results = await linter.lint({
+  tenantSchemaPath: './src/db/schema/tenant',
+  sharedSchemaPath: './src/db/schema/shared',
+});
+
+// {
+//   success: false,
+//   totalSchemas: 12,
+//   errors: 1,
+//   warnings: 2,
+//   issues: [...]
+// }
+```
+
+### LintResult
+
+```typescript
+interface LintResult {
+  success: boolean;
+  totalSchemas: number;
+  errors: number;
+  warnings: number;
+  issues: LintIssue[];
+}
+
+interface LintIssue {
+  file: string;
+  line: number;
+  column: number;
+  rule: string;
+  severity: 'error' | 'warn';
+  message: string;
+}
+```
+
+### Available Rules
+
+| Rule | Description |
+|------|-------------|
+| `table-naming` | Table naming convention |
+| `column-naming` | Column naming convention |
+| `require-primary-key` | Require primary key |
+| `prefer-uuid-pk` | Prefer UUID over serial |
+| `require-timestamps` | Require created_at/updated_at |
+| `index-foreign-keys` | Index on foreign keys |
+| `no-cascade-delete` | Avoid CASCADE DELETE |
+| `require-soft-delete` | Require deleted_at column |
+
+## Scaffold Module
+
+```typescript
+import {
+  generateSchemaTemplate,
+  generateSeedTemplate,
+  generateMigrationTemplate,
+} from 'drizzle-multitenant/scaffold';
+```
+
+### generateSchemaTemplate
+
+```typescript
+const result = generateSchemaTemplate('orders', {
+  type: 'tenant',
+  timestamps: true,
+  softDelete: false,
+  uuid: true,
+  withZod: true,
+  withExample: false,
+});
+
+// result.content - Generated TypeScript code
+// result.path - Suggested file path
+```
+
+### generateSeedTemplate
+
+```typescript
+const result = generateSeedTemplate('initial', {
+  type: 'tenant',
+  table: 'users',
+});
+
+// result.content - Generated seed file
+// result.path - Suggested file path
+```
+
+### generateMigrationTemplate
+
+```typescript
+const result = generateMigrationTemplate('create-orders', {
+  type: 'tenant',
+  template: 'create-table', // or 'add-column', 'add-index', 'blank'
+  sequence: 1,
+});
+
+// result.content - Generated SQL migration
+// result.path - Suggested file path
+```
+
+## Export Module
+
+```typescript
+import {
+  SchemaExporter,
+  JsonSchemaExporter,
+  TypeScriptExporter,
+  MermaidExporter,
+  SchemaImporter,
+} from 'drizzle-multitenant/export';
+```
+
+### JsonSchemaExporter
+
+```typescript
+const exporter = new JsonSchemaExporter();
+const schema = exporter.export({
+  tenant: tenantSchema,
+  shared: sharedSchema,
+});
+
+// JSON Schema format with definitions for each table
+```
+
+### TypeScriptExporter
+
+```typescript
+const exporter = new TypeScriptExporter({
+  includeZod: true,
+});
+
+const types = exporter.export({
+  tenant: tenantSchema,
+  shared: sharedSchema,
+});
+
+// TypeScript interfaces and Zod schemas
+```
+
+### MermaidExporter
+
+```typescript
+const exporter = new MermaidExporter({
+  theme: 'dark', // 'default', 'dark', 'forest', 'neutral'
+  showIndexes: true,
+});
+
+const erd = exporter.export({
+  tenant: tenantSchema,
+  shared: sharedSchema,
+});
+
+// Mermaid ERD diagram
+```
+
+### SchemaImporter
+
+```typescript
+const importer = new SchemaImporter({
+  includeZod: true,
+});
+
+// Parse JSON and generate files
+const files = importer.import(jsonSchema);
+
+// Or write to directory
+await importer.importToDirectory(jsonSchema, './src/db/schema', {
+  overwrite: false,
+  dryRun: false,
+});
+```
+
+## Migrator Shared Schema
+
+Additional methods for shared schema management:
+
+```typescript
+const migrator = createMigrator(config, {
+  migrationsFolder: './drizzle/tenant-migrations',
+  sharedMigrationsFolder: './drizzle/shared-migrations',
+});
+```
+
+| Method | Description |
+|--------|-------------|
+| `migrateShared()` | Apply shared schema migrations |
+| `getSharedStatus()` | Get shared migration status |
+| `migrateAllWithShared(options)` | Migrate shared then all tenants |
+| `seedShared(seedFn)` | Seed the shared schema |
+| `seedAllWithShared(sharedFn, tenantFn, options)` | Seed shared then all tenants |
+| `hasSharedSeeding()` | Check if shared seeding is configured |
+
+### SharedSeedFunction
+
+```typescript
+type SharedSeedFunction = (db: SharedDatabase) => Promise<void>;
+
+// Example
+const sharedSeed: SharedSeedFunction = async (db) => {
+  await db.insert(plans).values([...]).onConflictDoNothing();
+};
