@@ -248,6 +248,56 @@ export interface HealthCheckOptions {
 }
 
 /**
+ * Connection metrics for a pool
+ */
+export interface ConnectionMetrics {
+  /** Total connections in pool */
+  total: number;
+  /** Idle connections available */
+  idle: number;
+  /** Waiting requests in queue */
+  waiting: number;
+}
+
+/**
+ * Metrics for a single tenant pool
+ */
+export interface TenantPoolMetrics {
+  /** Tenant ID */
+  tenantId: string;
+  /** Schema name */
+  schemaName: string;
+  /** Connection metrics */
+  connections: ConnectionMetrics;
+  /** Last access timestamp */
+  lastAccessedAt: string;
+}
+
+/**
+ * Aggregate metrics result
+ */
+export interface MetricsResult {
+  /** Pool metrics */
+  pools: {
+    /** Total active pools */
+    total: number;
+    /** Maximum pools allowed */
+    maxPools: number;
+    /** Individual tenant pool metrics */
+    tenants: TenantPoolMetrics[];
+  };
+  /** Shared database metrics (if initialized) */
+  shared: {
+    /** Whether shared pool is initialized */
+    initialized: boolean;
+    /** Connection metrics */
+    connections: ConnectionMetrics | null;
+  };
+  /** Timestamp of metrics collection */
+  timestamp: string;
+}
+
+/**
  * Health check result
  */
 export interface HealthCheckResult {
@@ -304,6 +354,8 @@ export interface TenantManager<
   warmup(tenantIds: string[], options?: WarmupOptions): Promise<WarmupResult>;
   /** Check health of all pools and connections */
   healthCheck(options?: HealthCheckOptions): Promise<HealthCheckResult>;
+  /** Get current metrics for all pools (zero overhead, collected on demand) */
+  getMetrics(): MetricsResult;
   /** Dispose all pools and cleanup */
   dispose(): Promise<void>;
 }

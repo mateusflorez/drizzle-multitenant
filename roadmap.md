@@ -120,8 +120,8 @@ const health = await manager.healthCheck({
 });
 ```
 
-#### Métricas Agnósticas (Zero Deps)
-Expor métricas em formato agnóstico - usuário integra com Prometheus/Datadog/etc.
+#### ~~Métricas Agnósticas (Zero Deps)~~ (Concluído v1.1.0)
+~~Expor métricas em formato agnóstico - usuário integra com Prometheus/Datadog/etc.~~
 
 > **Filosofia**: Zero dependências extras, zero overhead de tracking contínuo.
 > Dados coletados sob demanda via `getMetrics()`.
@@ -193,8 +193,8 @@ export default defineConfig({
 **Checklist v1.1.0:**
 - [x] Retry logic com backoff exponencial
 - [x] `manager.healthCheck()` API
-- [ ] `manager.getMetrics()` API (dados crus, zero deps)
-- [x] Testes unitários e integração (retry: 20 testes, healthCheck: 11 testes)
+- [x] `manager.getMetrics()` API (dados crus, zero deps)
+- [x] Testes unitários e integração (retry: 20 testes, healthCheck: 11 testes, getMetrics: 7 testes)
 
 ---
 
@@ -835,7 +835,7 @@ const stats = await adminQuery
 | Feature | Esforço | Versão | Status |
 |---------|---------|--------|--------|
 | ~~Health check API~~ | 2h | v1.1.0 | **Concluído** |
-| `getMetrics()` API | 1h | v1.1.0 | Pendente |
+| ~~`getMetrics()` API~~ | 1h | v1.1.0 | **Concluído** |
 | Schema name sanitization | 1h | v1.2.0 | Pendente |
 | CLI interativo básico | 4h | v1.5.0 | Pendente |
 | Tenant clone (schema only) | 4h | v1.5.0 | Pendente |

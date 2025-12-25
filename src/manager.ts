@@ -9,6 +9,7 @@ import type {
   RetryConfig,
   HealthCheckOptions,
   HealthCheckResult,
+  MetricsResult,
 } from './types.js';
 
 /**
@@ -94,6 +95,10 @@ export function createTenantManager<
 
     async healthCheck(options?: HealthCheckOptions): Promise<HealthCheckResult> {
       return poolManager.healthCheck(options);
+    },
+
+    getMetrics(): MetricsResult {
+      return poolManager.getMetrics();
     },
 
     async dispose(): Promise<void> {

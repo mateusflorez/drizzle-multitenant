@@ -343,4 +343,76 @@ describe('PoolManager', () => {
       await expect(manager.healthCheck()).rejects.toThrow('has been disposed');
     });
   });
+
+  describe('getMetrics', () => {
+    it('should return empty metrics when no pools exist', () => {
+      const metrics = manager.getMetrics();
+
+      expect(metrics.pools.total).toBe(0);
+      expect(metrics.pools.maxPools).toBe(3); // from config
+      expect(metrics.pools.tenants).toHaveLength(0);
+      expect(metrics.shared.initialized).toBe(false);
+      expect(metrics.shared.connections).toBeNull();
+      expect(metrics.timestamp).toBeDefined();
+    });
+
+    it('should return metrics for active pools', () => {
+      manager.getDb('tenant-1');
+      manager.getDb('tenant-2');
+
+      const metrics = manager.getMetrics();
+
+      expect(metrics.pools.total).toBe(2);
+      expect(metrics.pools.tenants).toHaveLength(2);
+      expect(metrics.pools.tenants.map((t) => t.tenantId)).toContain('tenant-1');
+      expect(metrics.pools.tenants.map((t) => t.tenantId)).toContain('tenant-2');
+    });
+
+    it('should include connection metrics per tenant', () => {
+      manager.getDb('tenant-1');
+
+      const metrics = manager.getMetrics();
+      const tenant = metrics.pools.tenants[0];
+
+      expect(tenant.tenantId).toBe('tenant-1');
+      expect(tenant.schemaName).toBe('tenant_tenant-1');
+      expect(tenant.connections).toEqual({
+        total: 5,
+        idle: 3,
+        waiting: 0,
+      });
+      expect(tenant.lastAccessedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it('should include shared db metrics when initialized', () => {
+      manager.getSharedDb();
+
+      const metrics = manager.getMetrics();
+
+      expect(metrics.shared.initialized).toBe(true);
+      expect(metrics.shared.connections).toEqual({
+        total: 5,
+        idle: 3,
+        waiting: 0,
+      });
+    });
+
+    it('should return maxPools from config', () => {
+      const metrics = manager.getMetrics();
+
+      expect(metrics.pools.maxPools).toBe(3); // config.isolation.maxPools
+    });
+
+    it('should include ISO timestamp', () => {
+      const metrics = manager.getMetrics();
+
+      expect(metrics.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    });
+
+    it('should throw when manager is disposed', async () => {
+      await manager.dispose();
+
+      expect(() => manager.getMetrics()).toThrow('has been disposed');
+    });
+  });
 });

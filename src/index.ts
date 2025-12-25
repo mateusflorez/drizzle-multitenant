@@ -43,6 +43,9 @@ export type {
   HealthCheckResult,
   PoolHealth,
   PoolHealthStatus,
+  MetricsResult,
+  TenantPoolMetrics,
+  ConnectionMetrics,
 } from './types.js';
 
 export type { RetryResult } from './retry.js';

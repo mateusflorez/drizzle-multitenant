@@ -14,6 +14,8 @@ import type {
   HealthCheckResult,
   PoolHealth,
   PoolHealthStatus,
+  MetricsResult,
+  TenantPoolMetrics,
 } from './types.js';
 import { DEFAULT_CONFIG as defaults } from './types.js';
 import { createDebugLogger, DebugLogger } from './debug.js';
@@ -417,6 +419,65 @@ export class PoolManager<
       alreadyWarm: results.filter((r) => r.alreadyWarm).length,
       durationMs: Date.now() - startTime,
       details: results,
+    };
+  }
+
+  /**
+   * Get current metrics for all pools
+   *
+   * Collects metrics on demand with zero overhead when not called.
+   * Returns raw data that can be formatted for any monitoring system.
+   *
+   * @example
+   * ```typescript
+   * const metrics = manager.getMetrics();
+   * console.log(metrics.pools.total); // 15
+   *
+   * // Format for Prometheus
+   * for (const pool of metrics.pools.tenants) {
+   *   gauge.labels(pool.tenantId).set(pool.connections.idle);
+   * }
+   * ```
+   */
+  getMetrics(): MetricsResult {
+    this.ensureNotDisposed();
+
+    const maxPools = this.config.isolation.maxPools ?? defaults.maxPools;
+    const tenantMetrics: TenantPoolMetrics[] = [];
+
+    for (const [schemaName, entry] of this.pools.entries()) {
+      const tenantId = this.tenantIdBySchema.get(schemaName) ?? schemaName;
+      const pool = entry.pool;
+
+      tenantMetrics.push({
+        tenantId,
+        schemaName,
+        connections: {
+          total: pool.totalCount,
+          idle: pool.idleCount,
+          waiting: pool.waitingCount,
+        },
+        lastAccessedAt: new Date(entry.lastAccess).toISOString(),
+      });
+    }
+
+    return {
+      pools: {
+        total: tenantMetrics.length,
+        maxPools,
+        tenants: tenantMetrics,
+      },
+      shared: {
+        initialized: this.sharedPool !== null,
+        connections: this.sharedPool
+          ? {
+              total: this.sharedPool.totalCount,
+              idle: this.sharedPool.idleCount,
+              waiting: this.sharedPool.waitingCount,
+            }
+          : null,
+      },
+      timestamp: new Date().toISOString(),
     };
   }
 
