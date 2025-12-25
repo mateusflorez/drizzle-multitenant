@@ -13,3 +13,5 @@ export { initCommand } from './init.js';
 export { completionCommand } from './completion.js';
 export { interactiveCommand } from './interactive.js';
 export { seedCommand } from './seed.js';
+export { seedSharedCommand } from './seed-shared.js';
+export { seedAllCommand } from './seed-all.js';

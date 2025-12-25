@@ -31,11 +31,15 @@ import type {
   SharedMigrationStatus,
   SharedMigrationResult,
   SharedMigrateOptions,
+  // Shared schema seeding types
+  SharedSeedFunction,
+  SharedSeedResult,
 } from './types.js';
 import { detectTableFormat, getFormatConfig, type DetectedFormat, type TableFormat } from './table-format.js';
 import { SchemaManager } from './schema-manager.js';
 import { DriftDetector } from './drift/drift-detector.js';
 import { Seeder } from './seed/seeder.js';
+import { SharedSeeder } from './seed/shared-seeder.js';
 import { SyncManager } from './sync/sync-manager.js';
 import { MigrationExecutor } from './executor/migration-executor.js';
 import { BatchExecutor } from './executor/batch-executor.js';
@@ -62,6 +66,7 @@ export class Migrator<
   private readonly batchExecutor: BatchExecutor;
   private readonly cloner: Cloner;
   private readonly sharedMigrationExecutor: SharedMigrationExecutor | null;
+  private readonly sharedSeeder: SharedSeeder<TSharedSchema> | null;
 
   constructor(
     tenantConfig: Config<TTenantSchema, TSharedSchema>,
@@ -161,6 +166,19 @@ export class Migrator<
       );
     } else {
       this.sharedMigrationExecutor = null;
+    }
+
+    // Initialize SharedSeeder (if shared schema is configured)
+    if (tenantConfig.schemas.shared) {
+      this.sharedSeeder = new SharedSeeder(
+        { schemaName: 'public' },
+        {
+          createPool: this.schemaManager.createRootPool.bind(this.schemaManager),
+          sharedSchema: tenantConfig.schemas.shared as TSharedSchema,
+        }
+      );
+    } else {
+      this.sharedSeeder = null;
     }
   }
 
@@ -403,6 +421,101 @@ export class Migrator<
     options: SeedOptions = {}
   ): Promise<SeedResults> {
     return this.seeder.seedTenants(tenantIds, seedFn, options);
+  }
+
+  // ============================================================================
+  // Shared Schema Seeding Methods (delegated to SharedSeeder)
+  // ============================================================================
+
+  /**
+   * Check if shared schema seeding is available
+   *
+   * @returns True if shared schema is configured
+   */
+  hasSharedSeeding(): boolean {
+    return this.sharedSeeder !== null;
+  }
+
+  /**
+   * Seed the shared schema with initial data
+   *
+   * Seeds the public/shared schema with common data like plans, roles, permissions.
+   * Must have schemas.shared configured in the tenant config.
+   *
+   * @example
+   * ```typescript
+   * if (migrator.hasSharedSeeding()) {
+   *   const result = await migrator.seedShared(async (db) => {
+   *     await db.insert(plans).values([
+   *       { id: 'free', name: 'Free', price: 0 },
+   *       { id: 'pro', name: 'Pro', price: 29 },
+   *       { id: 'enterprise', name: 'Enterprise', price: 99 },
+   *     ]).onConflictDoNothing();
+   *
+   *     await db.insert(roles).values([
+   *       { name: 'admin', permissions: ['*'] },
+   *       { name: 'user', permissions: ['read'] },
+   *     ]).onConflictDoNothing();
+   *   });
+   *
+   *   if (result.success) {
+   *     console.log(`Seeded shared schema in ${result.durationMs}ms`);
+   *   }
+   * }
+   * ```
+   */
+  async seedShared(seedFn: SharedSeedFunction<TSharedSchema>): Promise<SharedSeedResult> {
+    if (!this.sharedSeeder) {
+      return {
+        schemaName: 'public',
+        success: false,
+        error: 'Shared schema not configured. Set schemas.shared in tenant config.',
+        durationMs: 0,
+      };
+    }
+
+    return this.sharedSeeder.seed(seedFn);
+  }
+
+  /**
+   * Seed shared schema first, then all tenants
+   *
+   * Convenience method for the common pattern of seeding shared tables
+   * before tenant tables.
+   *
+   * @example
+   * ```typescript
+   * const result = await migrator.seedAllWithShared(
+   *   async (db) => {
+   *     await db.insert(plans).values([{ id: 'free', name: 'Free' }]);
+   *   },
+   *   async (db, tenantId) => {
+   *     await db.insert(roles).values([{ name: 'admin' }]);
+   *   },
+   *   { concurrency: 10 }
+   * );
+   *
+   * if (result.shared.success) {
+   *   console.log('Shared seeding completed');
+   * }
+   * console.log(`Tenants: ${result.tenants.succeeded}/${result.tenants.total}`);
+   * ```
+   */
+  async seedAllWithShared(
+    sharedSeedFn: SharedSeedFunction<TSharedSchema>,
+    tenantSeedFn: SeedFunction<TTenantSchema>,
+    options: SeedOptions = {}
+  ): Promise<{ shared: SharedSeedResult; tenants: SeedResults }> {
+    // First seed shared schema
+    const sharedResult = await this.seedShared(sharedSeedFn);
+
+    // Then seed all tenants
+    const tenantsResult = await this.seedAll(tenantSeedFn, options);
+
+    return {
+      shared: sharedResult,
+      tenants: tenantsResult,
+    };
   }
 
   /**

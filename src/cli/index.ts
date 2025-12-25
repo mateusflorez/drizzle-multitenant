@@ -17,6 +17,8 @@ import {
   completionCommand,
   interactiveCommand,
   seedCommand,
+  seedSharedCommand,
+  seedAllCommand,
 } from './commands/index.js';
 import { initOutputContext } from './utils/output.js';
 import { mainMenu } from './ui/menu.js';
@@ -89,6 +91,8 @@ program.addCommand(initCommand);
 program.addCommand(completionCommand);
 program.addCommand(interactiveCommand);
 program.addCommand(seedCommand);
+program.addCommand(seedSharedCommand);
+program.addCommand(seedAllCommand);
 
 // Default action: launch interactive mode when no command is specified
 program.action(async () => {

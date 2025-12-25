@@ -74,6 +74,9 @@ export type {
   SeedOptions,
   TenantSeedResult,
   SeedResults,
+  // Shared schema seeding types
+  SharedSeedFunction,
+  SharedSeedResult,
 } from './migrator/types.js';
 
 export type {

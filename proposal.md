@@ -30,7 +30,7 @@ Expandir o `drizzle-multitenant` para incluir gerenciamento completo de **shared
 ### Gaps identificados
 
 1. ~~**Shared schema migrations** - Não há suporte para migrar o schema `public`~~ ✅ **Implementado**
-2. **Shared schema seeding** - Seeds só funcionam para tenants
+2. ~~**Shared schema seeding** - Seeds só funcionam para tenants~~ ✅ **Implementado**
 3. **Project scaffolding** - Sem geração de boilerplate
 4. **Schema validation** - Sem linting ou validação de convenções
 5. **Init wizard limitado** - Não gera estrutura de pastas completa
@@ -109,7 +109,7 @@ export default defineConfig({
 
 ---
 
-### 2. Shared Schema Seeding
+### 2. Shared Schema Seeding ✅ IMPLEMENTADO
 
 **Problema:** Dados iniciais compartilhados (planos, roles padrão) precisam de setup manual.
 
@@ -399,7 +399,7 @@ npx drizzle-multitenant import --from=./other-project/schemas.json
 
 ### Phase 1: Core Shared Schema (v1.3.0)
 - [x] Shared schema migrations ✅
-- [ ] Shared schema seeding
+- [x] Shared schema seeding ✅
 - [ ] Enhanced init wizard
 - [ ] Doctor command
 
@@ -426,18 +426,22 @@ src/
 │       ├── index.ts
 │       ├── shared-migration-executor.ts
 │       └── types.ts
+│   └── seed/
+│       ├── shared-seeder.ts         # ✅ IMPLEMENTADO
+│       └── shared-seeder.test.ts    # ✅ IMPLEMENTADO
 ├── cli/
 │   ├── commands/
 │   │   ├── generate-shared.ts       # ✅ IMPLEMENTADO
 │   │   ├── migrate-shared.ts        # ✅ IMPLEMENTADO
-│   │   ├── seed-shared.ts           # PENDENTE
+│   │   ├── seed-shared.ts           # ✅ IMPLEMENTADO
+│   │   ├── seed-all.ts              # ✅ IMPLEMENTADO
 │   │   ├── scaffold.ts              # PENDENTE
 │   │   ├── lint.ts                  # PENDENTE
 │   │   ├── doctor.ts                # PENDENTE
 │   │   └── export.ts                # PENDENTE
 │   └── ui/
 │       └── screens/
-│           ├── (integrado no menu principal)  # ✅ IMPLEMENTADO
+│           ├── seeding-screen.ts    # ✅ ATUALIZADO (shared seeding support)
 │           └── lint-screen.ts                 # PENDENTE
 ├── lint/                            # PENDENTE
 │   ├── index.ts
@@ -501,7 +505,19 @@ src/
 
 ## Changelog
 
-### 2025-12-25
+### 2025-12-25 (Shared Schema Seeding)
+- ✅ Implementado `SharedSeeder` em `src/migrator/seed/shared-seeder.ts`
+- ✅ Implementado comando CLI `seed-shared`
+- ✅ Implementado comando CLI `seed-all` (shared + tenants)
+- ✅ Atualizado `SeedingScreen` na UI interativa com suporte a shared seeding
+- ✅ Adicionado método `seedShared()` no Migrator
+- ✅ Adicionado método `seedAllWithShared()` no Migrator
+- ✅ Adicionado método `hasSharedSeeding()` no Migrator
+- ✅ Adicionada interface `ISharedSeeder` em interfaces.ts
+- ✅ Exportados tipos `SharedSeedFunction` e `SharedSeedResult`
+- ✅ Todos os 684 testes passando
+
+### 2025-12-25 (Shared Schema Migrations)
 - ✅ Implementado `SharedMigrationExecutor` em `src/migrator/shared/`
 - ✅ Implementado comando CLI `migrate:shared`
 - ✅ Implementado comando CLI `generate:shared`
