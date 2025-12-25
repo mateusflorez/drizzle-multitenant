@@ -42,6 +42,10 @@
     "./lint": {
       "import": "./dist/lint/index.js",
       "types": "./dist/lint/index.d.ts"
+    },
+    "./metrics": {
+      "import": "./dist/metrics/index.js",
+      "types": "./dist/metrics/index.d.ts"
     }
   },
   "bin": {

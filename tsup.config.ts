@@ -11,6 +11,7 @@ export default defineConfig({
     'src/cross-schema/index.ts',
     'src/scaffold/index.ts',
     'src/lint/index.ts',
+    'src/metrics/index.ts',
     'src/cli/index.ts',
   ],
   format: ['esm'],

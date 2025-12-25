@@ -411,7 +411,7 @@ npx drizzle-multitenant import --from=./other-project/schemas.json
 ### Phase 3: Advanced Features (v1.5.0)
 - [ ] Export/Import schemas
 - [ ] CI/CD templates
-- [ ] Metrics dashboard integration
+- [x] Metrics dashboard integration ✅
 
 ---
 
@@ -452,7 +452,16 @@ src/
 │   └── ui/
 │       └── screens/
 │           ├── seeding-screen.ts    # ✅ ATUALIZADO (shared seeding support)
-│           └── lint-screen.ts       # ✅ IMPLEMENTADO
+│           ├── lint-screen.ts       # ✅ IMPLEMENTADO
+│           └── metrics-screen.ts    # ✅ IMPLEMENTADO
+├── metrics/                         # ✅ IMPLEMENTADO
+│   ├── index.ts
+│   ├── types.ts                     # ✅ Prometheus types
+│   ├── collector.ts                 # ✅ MetricsCollector class
+│   ├── prometheus.ts                # ✅ PrometheusExporter class
+│   ├── express.ts                   # ✅ Express middleware
+│   ├── fastify.ts                   # ✅ Fastify plugin
+│   └── metrics.test.ts              # ✅ 22 tests
 ├── lint/                            # ✅ IMPLEMENTADO
 │   ├── index.ts
 │   ├── linter.ts                    # ✅ SchemaLinter class
@@ -522,6 +531,35 @@ src/
 ---
 
 ## Changelog
+
+### 2025-12-25 (Metrics Dashboard Integration)
+- ✅ Implementado módulo `metrics` em `src/metrics/`
+- ✅ Implementado `MetricsCollector` para agregar métricas de pool, health e runtime
+- ✅ Implementado `PrometheusExporter` para exportar métricas em formato Prometheus text
+  - Suporte a 17+ métricas diferentes
+  - Métricas de pool: active, max, connections (total/idle/waiting), last access
+  - Métricas de shared pool: initialized, connections
+  - Métricas de health: status, pools total/degraded/unhealthy, response times
+  - Métricas de runtime: uptime, memory (heap/external/rss), handles, requests
+- ✅ Implementado middleware Express para expor endpoint `/metrics`
+  - Suporte a autenticação básica
+  - Suporte a métricas de runtime opcionais
+- ✅ Implementado plugin Fastify para expor endpoint `/metrics`
+  - Decoradores `metricsCollector` e `metricsExporter`
+  - Schema OpenAPI para documentação
+- ✅ Implementado comando CLI `metrics` com opções:
+  - `--health`: Incluir health check (pode ser lento)
+  - `--prometheus`: Saída em formato Prometheus text
+  - `--watch`: Modo watch com refresh periódico
+  - `--interval`: Intervalo de refresh em ms
+- ✅ Implementado `MetricsScreen` para UI interativa
+  - Visualização de pool metrics
+  - Visualização de health check
+  - Export Prometheus com syntax highlighting
+  - Visualização de runtime metrics
+- ✅ Exportação via `drizzle-multitenant/metrics` no package.json
+- ✅ Adicionados 22 testes unitários
+- ✅ Todos os 911 testes passando
 
 ### 2025-12-25 (Schema Linting)
 - ✅ Implementado módulo `lint` em `src/lint/`
