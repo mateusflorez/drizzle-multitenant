@@ -85,7 +85,7 @@ export default defineConfig({
 
     footer: {
       message: 'Released under the MIT License.',
-      copyright: `Copyright © 2024-${new Date().getFullYear()} Mateus Florez`
+      copyright: `Copyright © 2024-${new Date().getFullYear()} Mateus Flores`
     },
 
     search: {

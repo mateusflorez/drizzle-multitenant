@@ -1,0 +1,360 @@
+/**
+ * drizzle-multitenant custom theme
+ * Colors extracted from logo.svg
+ */
+
+:root {
+  /* Brand Colors - Teal */
+  --dm-teal-light: #6AADAB;
+  --dm-teal: #4A9A98;
+  --dm-teal-dark: #3A8A88;
+
+  /* Brand Colors - Navy */
+  --dm-navy-light: #3D5A80;
+  --dm-navy: #2B3E5C;
+  --dm-navy-dark: #1E2D42;
+
+  /* VitePress Brand Overrides */
+  --vp-c-brand-1: var(--dm-teal);
+  --vp-c-brand-2: var(--dm-teal-light);
+  --vp-c-brand-3: var(--dm-teal-dark);
+  --vp-c-brand-soft: rgba(106, 173, 171, 0.14);
+
+  /* Accent for highlights */
+  --vp-c-tip-1: var(--dm-teal);
+  --vp-c-tip-2: var(--dm-teal-light);
+  --vp-c-tip-3: var(--dm-teal-dark);
+  --vp-c-tip-soft: rgba(106, 173, 171, 0.14);
+
+  /* Code blocks */
+  --vp-code-color: var(--dm-teal-light);
+}
+
+/* Dark mode specific */
+.dark {
+  --vp-c-brand-1: var(--dm-teal-light);
+  --vp-c-brand-2: var(--dm-teal);
+  --vp-c-brand-3: #7BBDBB;
+  --vp-c-brand-soft: rgba(106, 173, 171, 0.16);
+
+  /* Background tweaks for better contrast */
+  --vp-c-bg: #0f1419;
+  --vp-c-bg-soft: #161b22;
+  --vp-c-bg-mute: #1c2128;
+  --vp-c-bg-alt: #0d1117;
+
+  /* Sidebar */
+  --vp-sidebar-bg-color: var(--vp-c-bg);
+}
+
+/* ============================================
+   HERO SECTION
+   ============================================ */
+
+.VPHero {
+  padding-bottom: 64px !important;
+}
+
+.VPHero .name {
+  background: linear-gradient(135deg, var(--dm-teal-light) 0%, var(--dm-teal) 50%, var(--dm-navy-light) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.VPHero .text {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.VPHero .tagline {
+  color: var(--vp-c-text-2);
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+/* Hero buttons */
+.VPButton.brand {
+  background: linear-gradient(135deg, var(--dm-teal) 0%, var(--dm-teal-dark) 100%);
+  border-color: var(--dm-teal);
+  transition: all 0.25s ease;
+}
+
+.VPButton.brand:hover {
+  background: linear-gradient(135deg, var(--dm-teal-light) 0%, var(--dm-teal) 100%);
+  border-color: var(--dm-teal-light);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(106, 173, 171, 0.3);
+}
+
+.VPButton.alt {
+  border-color: var(--dm-navy-light);
+  color: var(--vp-c-text-1);
+  transition: all 0.25s ease;
+}
+
+.VPButton.alt:hover {
+  border-color: var(--dm-teal);
+  color: var(--dm-teal);
+  transform: translateY(-2px);
+}
+
+/* ============================================
+   FEATURE CARDS
+   ============================================ */
+
+.VPFeatures {
+  padding-top: 32px !important;
+}
+
+.VPFeature {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.VPFeature:hover {
+  border-color: var(--dm-teal);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+}
+
+.dark .VPFeature:hover {
+  box-shadow: 0 12px 40px rgba(106, 173, 171, 0.1);
+}
+
+.VPFeature .icon {
+  background: linear-gradient(135deg, var(--dm-teal) 0%, var(--dm-navy-light) 100%);
+  border-radius: 10px;
+  padding: 10px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+}
+
+.VPFeature .title {
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--vp-c-text-1);
+}
+
+.VPFeature .details {
+  color: var(--vp-c-text-2);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+/* ============================================
+   NAVIGATION
+   ============================================ */
+
+.VPNavBar {
+  backdrop-filter: blur(12px);
+}
+
+.VPNavBarMenuLink:hover,
+.VPNavBarMenuLink.active {
+  color: var(--dm-teal-light);
+}
+
+/* Nav search */
+.DocSearch-Button {
+  border: 1px solid var(--vp-c-divider) !important;
+  border-radius: 8px !important;
+  transition: all 0.2s ease;
+}
+
+.DocSearch-Button:hover {
+  border-color: var(--dm-teal) !important;
+}
+
+/* ============================================
+   SIDEBAR
+   ============================================ */
+
+.VPSidebarItem.level-0 .text {
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+.VPSidebarItem .link:hover .text,
+.VPSidebarItem.is-active .link .text {
+  color: var(--dm-teal-light);
+}
+
+.VPSidebarItem.is-active .indicator {
+  background: var(--dm-teal);
+}
+
+/* ============================================
+   CONTENT
+   ============================================ */
+
+/* Headings */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  letter-spacing: -0.02em;
+}
+
+.vp-doc h2 {
+  border-top: 1px solid var(--vp-c-divider);
+  padding-top: 24px;
+  margin-top: 48px;
+}
+
+/* Links */
+.vp-doc a {
+  color: var(--dm-teal-light);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s ease;
+}
+
+.vp-doc a:hover {
+  border-bottom-color: var(--dm-teal-light);
+}
+
+/* Code blocks */
+.vp-doc :not(pre) > code {
+  background: var(--vp-c-bg-mute);
+  color: var(--dm-teal-light);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.9em;
+}
+
+/* Code block header */
+.vp-code-group .tabs label.active {
+  color: var(--dm-teal-light);
+}
+
+div[class*='language-'] {
+  border-radius: 10px;
+  border: 1px solid var(--vp-c-divider);
+}
+
+div[class*='language-']:hover {
+  border-color: var(--vp-c-divider-light);
+}
+
+/* Tables */
+.vp-doc table {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+}
+
+.vp-doc th {
+  background: var(--vp-c-bg-soft);
+  font-weight: 600;
+}
+
+.vp-doc tr:hover td {
+  background: var(--vp-c-bg-soft);
+}
+
+/* Blockquotes */
+.vp-doc blockquote {
+  border-left: 3px solid var(--dm-teal);
+  background: var(--vp-c-bg-soft);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 16px;
+}
+
+/* Custom containers */
+.vp-doc .tip {
+  border-color: var(--dm-teal);
+  background-color: rgba(106, 173, 171, 0.08);
+}
+
+.vp-doc .warning {
+  border-color: #e5a54b;
+}
+
+.vp-doc .danger {
+  border-color: #e54b4b;
+}
+
+/* ============================================
+   FOOTER
+   ============================================ */
+
+.VPFooter {
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+/* ============================================
+   MOBILE RESPONSIVE
+   ============================================ */
+
+@media (max-width: 768px) {
+  .VPHero .name {
+    font-size: 2rem;
+  }
+
+  .VPHero .text {
+    font-size: 1.5rem;
+  }
+
+  .VPFeature {
+    margin: 8px 0;
+  }
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.VPHero .container {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.VPFeature {
+  animation: fadeInUp 0.6s ease-out;
+  animation-fill-mode: both;
+}
+
+.VPFeature:nth-child(1) { animation-delay: 0.1s; }
+.VPFeature:nth-child(2) { animation-delay: 0.2s; }
+.VPFeature:nth-child(3) { animation-delay: 0.3s; }
+.VPFeature:nth-child(4) { animation-delay: 0.4s; }
+.VPFeature:nth-child(5) { animation-delay: 0.5s; }
+.VPFeature:nth-child(6) { animation-delay: 0.6s; }
+
+/* ============================================
+   SCROLLBAR (Dark mode)
+   ============================================ */
+
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: var(--vp-c-bg);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--vp-c-divider);
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: var(--dm-teal);
+}
