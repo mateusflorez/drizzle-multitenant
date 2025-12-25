@@ -12,6 +12,14 @@ export {
 } from './cross-schema/cross-schema.js';
 export { withShared, WithSharedQueryBuilder } from './cross-schema/with-shared.js';
 
+// Retry utilities
+export {
+  withRetry,
+  createRetrier,
+  isRetryableError,
+  calculateDelay,
+} from './retry.js';
+
 // Types
 export type {
   Config,
@@ -30,7 +38,10 @@ export type {
   WarmupOptions,
   WarmupResult,
   TenantWarmupResult,
+  RetryConfig,
 } from './types.js';
+
+export type { RetryResult } from './retry.js';
 
 export type {
   TenantContext,

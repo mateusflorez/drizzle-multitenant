@@ -56,8 +56,8 @@
 
 ### v1.1.0 - Resiliência e Observabilidade
 
-#### Retry Logic para Conexões
-Conexões podem falhar temporariamente. Adicionar retry automático com backoff exponencial.
+#### ~~Retry Logic para Conexões~~ (Concluído v1.1.0)
+~~Conexões podem falhar temporariamente. Adicionar retry automático com backoff exponencial.~~
 
 ```typescript
 import { defineConfig } from 'drizzle-multitenant';
@@ -70,10 +70,16 @@ export default defineConfig({
       initialDelayMs: 100,
       maxDelayMs: 5000,
       backoffMultiplier: 2,
+      jitter: true,  // Evita thundering herd
+      onRetry: (attempt, error, delay) => console.log(`Retry ${attempt}`),
     },
   },
   // ...
 });
+
+// Uso com retry automático
+const db = await tenants.getDbAsync('tenant-123');
+const sharedDb = await tenants.getSharedDbAsync();
 ```
 
 #### Health Checks
@@ -158,11 +164,11 @@ export default defineConfig({
 ```
 
 **Checklist v1.1.0:**
-- [ ] Retry logic com backoff exponencial
+- [x] Retry logic com backoff exponencial
 - [ ] `manager.healthCheck()` API
 - [ ] Métricas Prometheus
 - [ ] Integração com pino/winston
-- [ ] Testes unitários e integração
+- [x] Testes unitários e integração (retry: 20 testes)
 
 ---
 

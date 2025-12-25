@@ -82,4 +82,35 @@ function validateConfig<
   if (config.isolation.poolTtlMs !== undefined && config.isolation.poolTtlMs < 0) {
     throw new Error('[drizzle-multitenant] isolation.poolTtlMs must be non-negative');
   }
+
+  // Retry config validation
+  if (config.connection.retry) {
+    const retry = config.connection.retry;
+
+    if (retry.maxAttempts !== undefined && retry.maxAttempts < 1) {
+      throw new Error('[drizzle-multitenant] connection.retry.maxAttempts must be at least 1');
+    }
+
+    if (retry.initialDelayMs !== undefined && retry.initialDelayMs < 0) {
+      throw new Error('[drizzle-multitenant] connection.retry.initialDelayMs must be non-negative');
+    }
+
+    if (retry.maxDelayMs !== undefined && retry.maxDelayMs < 0) {
+      throw new Error('[drizzle-multitenant] connection.retry.maxDelayMs must be non-negative');
+    }
+
+    if (retry.backoffMultiplier !== undefined && retry.backoffMultiplier < 1) {
+      throw new Error('[drizzle-multitenant] connection.retry.backoffMultiplier must be at least 1');
+    }
+
+    if (
+      retry.initialDelayMs !== undefined &&
+      retry.maxDelayMs !== undefined &&
+      retry.initialDelayMs > retry.maxDelayMs
+    ) {
+      throw new Error(
+        '[drizzle-multitenant] connection.retry.initialDelayMs cannot be greater than maxDelayMs'
+      );
+    }
+  }
 }

@@ -1,5 +1,5 @@
 import { PoolManager } from './pool.js';
-import type { Config, TenantManager, TenantDb, SharedDb, WarmupOptions, WarmupResult } from './types.js';
+import type { Config, TenantManager, TenantDb, SharedDb, WarmupOptions, WarmupResult, RetryConfig } from './types.js';
 
 /**
  * Create a tenant manager instance
@@ -42,8 +42,16 @@ export function createTenantManager<
       return poolManager.getDb(tenantId);
     },
 
+    async getDbAsync(tenantId: string): Promise<TenantDb<TTenantSchema>> {
+      return poolManager.getDbAsync(tenantId);
+    },
+
     getSharedDb(): SharedDb<TSharedSchema> {
       return poolManager.getSharedDb();
+    },
+
+    async getSharedDbAsync(): Promise<SharedDb<TSharedSchema>> {
+      return poolManager.getSharedDbAsync();
     },
 
     getSchemaName(tenantId: string): string {
@@ -60,6 +68,10 @@ export function createTenantManager<
 
     getActiveTenantIds(): string[] {
       return poolManager.getActiveTenantIds();
+    },
+
+    getRetryConfig(): Required<RetryConfig> {
+      return poolManager.getRetryConfig();
     },
 
     async evictPool(tenantId: string): Promise<void> {

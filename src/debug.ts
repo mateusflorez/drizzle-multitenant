@@ -135,6 +135,52 @@ export class DebugLogger {
   }
 
   /**
+   * Log connection retry event
+   */
+  logConnectionRetry(
+    identifier: string,
+    attempt: number,
+    maxAttempts: number,
+    error: Error,
+    delayMs: number
+  ): void {
+    if (!this.enabled || !this.logPoolEvents) return;
+
+    const context: DebugContext = {
+      type: 'connection_retry',
+      tenantId: identifier,
+      error: error.message,
+      metadata: { attempt, maxAttempts, delayMs },
+    };
+
+    this.logger(
+      `${PREFIX} tenant=${identifier} CONNECTION_RETRY attempt=${attempt}/${maxAttempts} delay=${delayMs}ms error="${error.message}"`,
+      context
+    );
+  }
+
+  /**
+   * Log connection success after retries
+   */
+  logConnectionSuccess(identifier: string, attempts: number, totalTimeMs: number): void {
+    if (!this.enabled || !this.logPoolEvents) return;
+
+    const context: DebugContext = {
+      type: 'pool_created',
+      tenantId: identifier,
+      durationMs: totalTimeMs,
+      metadata: { attempts },
+    };
+
+    if (attempts > 1) {
+      this.logger(
+        `${PREFIX} tenant=${identifier} CONNECTION_SUCCESS attempts=${attempts} totalTime=${totalTimeMs}ms`,
+        context
+      );
+    }
+  }
+
+  /**
    * Log a custom debug message
    */
   log(message: string, context?: Partial<DebugContext>): void {

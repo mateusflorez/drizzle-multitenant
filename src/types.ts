@@ -7,6 +7,26 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 export type IsolationStrategy = 'schema' | 'database' | 'row';
 
 /**
+ * Retry configuration for connection attempts
+ */
+export interface RetryConfig {
+  /** Maximum number of retry attempts (default: 3) */
+  maxAttempts?: number;
+  /** Initial delay in milliseconds before first retry (default: 100) */
+  initialDelayMs?: number;
+  /** Maximum delay in milliseconds between retries (default: 5000) */
+  maxDelayMs?: number;
+  /** Multiplier for exponential backoff (default: 2) */
+  backoffMultiplier?: number;
+  /** Whether to add jitter to delays to avoid thundering herd (default: true) */
+  jitter?: boolean;
+  /** Custom function to determine if an error is retryable */
+  isRetryable?: (error: Error) => boolean;
+  /** Called on each retry attempt */
+  onRetry?: (attempt: number, error: Error, delayMs: number) => void;
+}
+
+/**
  * Connection configuration
  */
 export interface ConnectionConfig {
@@ -14,6 +34,8 @@ export interface ConnectionConfig {
   url: string;
   /** Pool configuration options */
   poolConfig?: Omit<PoolConfig, 'connectionString'>;
+  /** Retry configuration for connection failures */
+  retry?: RetryConfig;
 }
 
 /**
@@ -86,7 +108,7 @@ export interface DebugConfig {
  */
 export interface DebugContext {
   /** Event type */
-  type: 'query' | 'slow_query' | 'pool_created' | 'pool_evicted' | 'pool_error' | 'warmup';
+  type: 'query' | 'slow_query' | 'pool_created' | 'pool_evicted' | 'pool_error' | 'warmup' | 'connection_retry';
   /** Tenant ID */
   tenantId?: string;
   /** Schema name */
@@ -191,10 +213,14 @@ export interface TenantManager<
   TTenantSchema extends Record<string, unknown> = Record<string, unknown>,
   TSharedSchema extends Record<string, unknown> = Record<string, unknown>,
 > {
-  /** Get database instance for a specific tenant */
+  /** Get database instance for a specific tenant (sync, no validation) */
   getDb(tenantId: string): TenantDb<TTenantSchema>;
-  /** Get shared database instance */
+  /** Get database instance for a specific tenant with retry and validation */
+  getDbAsync(tenantId: string): Promise<TenantDb<TTenantSchema>>;
+  /** Get shared database instance (sync, no validation) */
   getSharedDb(): SharedDb<TSharedSchema>;
+  /** Get shared database instance with retry and validation */
+  getSharedDbAsync(): Promise<SharedDb<TSharedSchema>>;
   /** Get the schema name for a tenant */
   getSchemaName(tenantId: string): string;
   /** Check if a tenant pool exists */
@@ -203,6 +229,8 @@ export interface TenantManager<
   getPoolCount(): number;
   /** Get all active tenant IDs */
   getActiveTenantIds(): string[];
+  /** Get the retry configuration */
+  getRetryConfig(): Required<RetryConfig>;
   /** Manually evict a tenant pool */
   evictPool(tenantId: string): Promise<void>;
   /** Pre-warm pools for specified tenants to reduce cold start latency */
@@ -222,5 +250,12 @@ export const DEFAULT_CONFIG = {
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
+  },
+  retry: {
+    maxAttempts: 3,
+    initialDelayMs: 100,
+    maxDelayMs: 5_000,
+    backoffMultiplier: 2,
+    jitter: true,
   },
 } as const;

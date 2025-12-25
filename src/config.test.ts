@@ -157,6 +157,85 @@ describe('defineConfig', () => {
         })
       ).toThrow('poolTtlMs must be non-negative');
     });
+
+    describe('retry config validation', () => {
+      it('should throw if maxAttempts is less than 1', () => {
+        expect(() =>
+          defineConfig({
+            ...validConfig,
+            connection: {
+              ...validConfig.connection,
+              retry: { maxAttempts: 0 },
+            },
+          })
+        ).toThrow('maxAttempts must be at least 1');
+      });
+
+      it('should throw if initialDelayMs is negative', () => {
+        expect(() =>
+          defineConfig({
+            ...validConfig,
+            connection: {
+              ...validConfig.connection,
+              retry: { initialDelayMs: -1 },
+            },
+          })
+        ).toThrow('initialDelayMs must be non-negative');
+      });
+
+      it('should throw if maxDelayMs is negative', () => {
+        expect(() =>
+          defineConfig({
+            ...validConfig,
+            connection: {
+              ...validConfig.connection,
+              retry: { maxDelayMs: -1 },
+            },
+          })
+        ).toThrow('maxDelayMs must be non-negative');
+      });
+
+      it('should throw if backoffMultiplier is less than 1', () => {
+        expect(() =>
+          defineConfig({
+            ...validConfig,
+            connection: {
+              ...validConfig.connection,
+              retry: { backoffMultiplier: 0.5 },
+            },
+          })
+        ).toThrow('backoffMultiplier must be at least 1');
+      });
+
+      it('should throw if initialDelayMs is greater than maxDelayMs', () => {
+        expect(() =>
+          defineConfig({
+            ...validConfig,
+            connection: {
+              ...validConfig.connection,
+              retry: { initialDelayMs: 1000, maxDelayMs: 100 },
+            },
+          })
+        ).toThrow('initialDelayMs cannot be greater than maxDelayMs');
+      });
+
+      it('should accept valid retry config', () => {
+        const config = defineConfig({
+          ...validConfig,
+          connection: {
+            ...validConfig.connection,
+            retry: {
+              maxAttempts: 5,
+              initialDelayMs: 100,
+              maxDelayMs: 10000,
+              backoffMultiplier: 2,
+              jitter: true,
+            },
+          },
+        });
+        expect(config.connection.retry?.maxAttempts).toBe(5);
+      });
+    });
   });
 
   describe('schemaNameTemplate', () => {

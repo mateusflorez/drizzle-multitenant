@@ -540,6 +540,102 @@ interface WarmupResult {
 }
 ```
 
+## Connection Retry
+
+Connections can fail temporarily due to network issues, database restarts, or resource limits. Configure automatic retry with exponential backoff:
+
+```typescript
+import { defineConfig } from 'drizzle-multitenant';
+
+export default defineConfig({
+  connection: {
+    url: process.env.DATABASE_URL!,
+    retry: {
+      maxAttempts: 3,           // Maximum retry attempts (default: 3)
+      initialDelayMs: 100,      // Initial delay before first retry (default: 100)
+      maxDelayMs: 5000,         // Maximum delay between retries (default: 5000)
+      backoffMultiplier: 2,     // Exponential backoff multiplier (default: 2)
+      jitter: true,             // Add randomness to prevent thundering herd (default: true)
+      onRetry: (attempt, error, delay) => {
+        console.log(`Retry ${attempt}: ${error.message}, waiting ${delay}ms`);
+      },
+    },
+  },
+  isolation: {
+    strategy: 'schema',
+    schemaNameTemplate: (id) => `tenant_${id}`,
+  },
+  schemas: { tenant: tenantSchema },
+});
+```
+
+### Async Methods with Retry
+
+Use the async methods for automatic retry and connection validation:
+
+```typescript
+const tenants = createTenantManager(config);
+
+// Async version with retry and connection validation
+const db = await tenants.getDbAsync('tenant-123');
+const users = await db.select().from(schema.users);
+
+// Shared DB with retry
+const sharedDb = await tenants.getSharedDbAsync();
+const plans = await sharedDb.select().from(sharedSchema.plans);
+
+// Sync version (no retry, for backward compatibility)
+const dbSync = tenants.getDb('tenant-123');
+```
+
+### Retryable Errors
+
+The following transient errors trigger automatic retry:
+
+- **Connection errors**: `ECONNREFUSED`, `ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`
+- **PostgreSQL transient**: `too many connections`, `database system is starting up`
+- **SSL/TLS errors**: SSL handshake failures
+- **Network issues**: Socket hang up, connection terminated
+
+Non-retryable errors (syntax errors, permission denied, etc.) fail immediately.
+
+### Custom Retry Logic
+
+Use the retry utilities directly for custom operations:
+
+```typescript
+import { withRetry, createRetrier } from 'drizzle-multitenant';
+
+// One-off retry
+const result = await withRetry(
+  () => someAsyncOperation(),
+  { maxAttempts: 5, initialDelayMs: 200 }
+);
+
+// Reusable retrier
+const retrier = createRetrier({ maxAttempts: 3 });
+const data = await retrier(() => fetchData());
+
+// Custom retry condition
+await withRetry(
+  () => customOperation(),
+  {
+    maxAttempts: 3,
+    isRetryable: (error) => error.code === 'CUSTOM_RETRYABLE_ERROR',
+  }
+);
+```
+
+### Debug Logging
+
+When debug mode is enabled, retry events are logged:
+
+```
+[drizzle-multitenant] tenant=abc CONNECTION_RETRY attempt=1/3 delay=100ms error="ECONNREFUSED"
+[drizzle-multitenant] tenant=abc CONNECTION_RETRY attempt=2/3 delay=200ms error="ECONNREFUSED"
+[drizzle-multitenant] tenant=abc CONNECTION_SUCCESS attempts=3 totalTime=350ms
+```
+
 ## Debug Mode
 
 Enable debug mode to log queries, pool events, and detect slow queries in development:
@@ -607,13 +703,13 @@ The custom logger receives a `DebugContext` object:
 
 ```typescript
 interface DebugContext {
-  type: 'query' | 'slow_query' | 'pool_created' | 'pool_evicted' | 'pool_error' | 'warmup';
+  type: 'query' | 'slow_query' | 'pool_created' | 'pool_evicted' | 'pool_error' | 'warmup' | 'connection_retry';
   tenantId?: string;
   schemaName?: string;
   query?: string;        // For query events
   durationMs?: number;
-  error?: string;        // For error events
-  metadata?: Record<string, unknown>;
+  error?: string;        // For error/retry events
+  metadata?: Record<string, unknown>;  // { attempt, maxAttempts, delayMs } for retry
 }
 ```
 
@@ -633,12 +729,15 @@ interface DebugContext {
 
 | Method | Description |
 |--------|-------------|
-| `getDb(tenantId)` | Get Drizzle instance for tenant |
-| `getSharedDb()` | Get Drizzle instance for shared schema |
+| `getDb(tenantId)` | Get Drizzle instance for tenant (sync) |
+| `getDbAsync(tenantId)` | Get Drizzle instance with retry & validation |
+| `getSharedDb()` | Get Drizzle instance for shared schema (sync) |
+| `getSharedDbAsync()` | Get shared instance with retry & validation |
 | `getSchemaName(tenantId)` | Get schema name for tenant |
 | `hasPool(tenantId)` | Check if pool exists |
 | `getPoolCount()` | Get count of active pools |
 | `getActiveTenantIds()` | Get list of active tenant IDs |
+| `getRetryConfig()` | Get the current retry configuration |
 | `evictPool(tenantId)` | Force evict a pool |
 | `warmup(tenantIds, options?)` | Pre-warm pools to reduce cold start |
 | `dispose()` | Cleanup all pools |
