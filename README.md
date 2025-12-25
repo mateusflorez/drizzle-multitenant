@@ -221,8 +221,21 @@ npx drizzle-multitenant migrate --all --concurrency=10
 # Interactive tenant selection
 npx drizzle-multitenant migrate  # Shows checkbox to select tenants
 
+# Mark migrations as applied without executing SQL
+# Useful for syncing tracking with already-applied migrations
+npx drizzle-multitenant migrate --all --mark-applied
+
 # Check migration status
 npx drizzle-multitenant status
+
+# Sync: detect divergences between disk and database
+npx drizzle-multitenant sync --status
+
+# Mark missing migrations as applied
+npx drizzle-multitenant sync --mark-missing
+
+# Remove orphan records (migrations deleted from disk)
+npx drizzle-multitenant sync --clean-orphans
 
 # Create a new tenant schema
 npx drizzle-multitenant tenant:create --id=new-tenant
@@ -236,6 +249,8 @@ npx drizzle-multitenant convert-format --to=name --dry-run
 # Generate shell completions
 npx drizzle-multitenant completion bash >> ~/.bashrc
 npx drizzle-multitenant completion zsh >> ~/.zshrc
+npx drizzle-multitenant completion fish >> ~/.config/fish/completions/drizzle-multitenant.fish
+npx drizzle-multitenant completion powershell >> $PROFILE
 ```
 
 ### Global Options
@@ -267,6 +282,63 @@ npx drizzle-multitenant migrate --all --json | jq '.summary'
 │ def-456          │ tenant_def   │ name       │ 48      │ 0       │ OK       │
 │ ghi-789          │ tenant_ghi   │ (new)      │ 0       │ 48      │ Behind   │
 └──────────────────┴──────────────┴────────────┴─────────┴─────────┴──────────┘
+```
+
+### Sync Migrations
+
+The `sync` command detects and fixes divergences between migrations on disk and the tracking table in the database.
+
+**Use cases:**
+
+| Scenario | Solution |
+|----------|----------|
+| Migration file renamed | `--clean-orphans` removes old record |
+| Migration file deleted | `--clean-orphans` removes orphan record |
+| Migrations applied manually | `--mark-missing` syncs tracking |
+| Legacy project onboarding | `migrate --mark-applied` marks all as applied |
+
+```bash
+# Show sync status for all tenants
+npx drizzle-multitenant sync --status
+
+# Show as JSON
+npx drizzle-multitenant sync --status --json
+
+# Mark missing migrations as applied (in disk but not tracked)
+npx drizzle-multitenant sync --mark-missing
+
+# Remove orphan records (tracked but not in disk)
+npx drizzle-multitenant sync --clean-orphans
+
+# Fix all divergences at once
+npx drizzle-multitenant sync --mark-missing --clean-orphans
+```
+
+### Shell Completions
+
+Enable tab-completion for your shell:
+
+```bash
+# Bash
+npx drizzle-multitenant completion bash >> ~/.bashrc
+source ~/.bashrc
+
+# Zsh
+npx drizzle-multitenant completion zsh >> ~/.zshrc
+source ~/.zshrc
+
+# Fish
+npx drizzle-multitenant completion fish > ~/.config/fish/completions/drizzle-multitenant.fish
+
+# PowerShell
+npx drizzle-multitenant completion powershell >> $PROFILE
+```
+
+After setup, press `Tab` to autocomplete commands and options:
+
+```bash
+npx drizzle-multitenant mi<Tab>  # completes to "migrate"
+npx drizzle-multitenant migrate --<Tab>  # shows available options
 ```
 
 ## Migration Table Formats

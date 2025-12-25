@@ -160,3 +160,69 @@ export interface AppliedMigration {
   hash?: string;
   appliedAt: Date;
 }
+
+/**
+ * Sync status for a single tenant
+ */
+export interface TenantSyncStatus {
+  tenantId: string;
+  schemaName: string;
+  /** Migrations in disk but not tracked in database */
+  missing: string[];
+  /** Migrations tracked in database but not found in disk */
+  orphans: string[];
+  /** Whether the tenant is in sync */
+  inSync: boolean;
+  /** Table format used */
+  format: TableFormat | null;
+  /** Error if any */
+  error?: string;
+}
+
+/**
+ * Aggregate sync status
+ */
+export interface SyncStatus {
+  total: number;
+  inSync: number;
+  outOfSync: number;
+  error: number;
+  details: TenantSyncStatus[];
+}
+
+/**
+ * Sync result for a single tenant
+ */
+export interface TenantSyncResult {
+  tenantId: string;
+  schemaName: string;
+  success: boolean;
+  /** Migrations that were marked as applied */
+  markedMigrations: string[];
+  /** Orphan records that were removed */
+  removedOrphans: string[];
+  error?: string;
+  durationMs: number;
+}
+
+/**
+ * Aggregate sync results
+ */
+export interface SyncResults {
+  total: number;
+  succeeded: number;
+  failed: number;
+  details: TenantSyncResult[];
+}
+
+/**
+ * Options for sync operations
+ */
+export interface SyncOptions {
+  /** Number of concurrent operations */
+  concurrency?: number;
+  /** Progress callback */
+  onProgress?: (tenantId: string, status: 'starting' | 'syncing' | 'completed' | 'failed') => void;
+  /** Error handler */
+  onError?: MigrationErrorHandler;
+}

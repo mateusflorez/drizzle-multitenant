@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import {
   migrateCommand,
   statusCommand,
+  syncCommand,
   generateCommand,
   tenantCreateCommand,
   tenantDropCommand,
@@ -49,6 +50,7 @@ Documentation:
 // Register commands
 program.addCommand(migrateCommand);
 program.addCommand(statusCommand);
+program.addCommand(syncCommand);
 program.addCommand(generateCommand);
 program.addCommand(tenantCreateCommand);
 program.addCommand(tenantDropCommand);

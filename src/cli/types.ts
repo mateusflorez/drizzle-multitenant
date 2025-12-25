@@ -179,3 +179,40 @@ export interface ConvertFormatOptions extends GlobalOptions {
   dryRun?: boolean;
   migrationsFolder?: string;
 }
+
+/**
+ * Options for the sync command
+ */
+export interface SyncOptions extends GlobalOptions {
+  config?: string;
+  status?: boolean;
+  markMissing?: boolean;
+  cleanOrphans?: boolean;
+  concurrency?: string;
+  migrationsFolder?: string;
+}
+
+/**
+ * JSON output for the sync command
+ */
+export interface SyncJsonOutput {
+  tenants: SyncTenantInfo[];
+  summary: SyncSummary;
+}
+
+export interface SyncTenantInfo {
+  id: string;
+  schema: string;
+  format: TableFormat | null;
+  inSync: boolean;
+  missing: string[];
+  orphans: string[];
+  error?: string | undefined;
+}
+
+export interface SyncSummary {
+  total: number;
+  inSync: number;
+  outOfSync: number;
+  error: number;
+}
