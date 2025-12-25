@@ -35,6 +35,8 @@ const tenants = createTenantManager(config);
 | `getRetryConfig()` | Get current retry configuration object |
 | `evictPool(tenantId)` | Force evict a pool |
 | `warmup(tenantIds, options?)` | Pre-warm pools for specified tenants |
+| `healthCheck(options?)` | Check health of all pools and connections |
+| `getMetrics()` | Get current metrics for all pools |
 | `dispose()` | Cleanup all pools and connections |
 
 ### Method Details
@@ -209,3 +211,73 @@ interface TenantDbFactory {
   getManager(): TenantManager;
 }
 ```
+
+### HealthCheckOptions
+
+```typescript
+interface HealthCheckOptions {
+  ping?: boolean;           // Execute SELECT 1 (default: true)
+  pingTimeoutMs?: number;   // Timeout for ping (default: 5000)
+  includeShared?: boolean;  // Check shared database (default: true)
+  tenantIds?: string[];     // Check specific tenants only
+}
+```
+
+### HealthCheckResult
+
+```typescript
+interface HealthCheckResult {
+  healthy: boolean;
+  pools: PoolHealth[];
+  sharedDb: PoolHealthStatus;
+  sharedDbResponseTimeMs?: number;
+  sharedDbError?: string;
+  totalPools: number;
+  degradedPools: number;
+  unhealthyPools: number;
+  timestamp: string;
+  durationMs: number;
+}
+
+type PoolHealthStatus = 'ok' | 'degraded' | 'unhealthy';
+
+interface PoolHealth {
+  tenantId: string;
+  schemaName: string;
+  status: PoolHealthStatus;
+  totalConnections: number;
+  idleConnections: number;
+  waitingRequests: number;
+  responseTimeMs?: number;
+  error?: string;
+}
+```
+
+### MetricsResult
+
+```typescript
+interface MetricsResult {
+  pools: {
+    total: number;
+    maxPools: number;
+    tenants: TenantPoolMetrics[];
+  };
+  shared: {
+    initialized: boolean;
+    connections: ConnectionMetrics | null;
+  };
+  timestamp: string;
+}
+
+interface TenantPoolMetrics {
+  tenantId: string;
+  schemaName: string;
+  connections: ConnectionMetrics;
+  lastAccessedAt: string;
+}
+
+interface ConnectionMetrics {
+  total: number;
+  idle: number;
+  waiting: number;
+}

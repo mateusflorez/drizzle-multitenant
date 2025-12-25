@@ -173,3 +173,184 @@ interface DebugContext {
   metadata?: Record<string, unknown>;
 }
 ```
+
+## Health Checks
+
+Verify the health of all pools and connections for monitoring and load balancer integration:
+
+```typescript
+const health = await tenants.healthCheck();
+
+if (health.healthy) {
+  console.log('All systems operational');
+} else {
+  console.log(`${health.unhealthyPools} pools are unhealthy`);
+}
+```
+
+### Express Endpoint
+
+```typescript
+app.get('/health', async (req, res) => {
+  const health = await tenants.healthCheck();
+  res.status(health.healthy ? 200 : 503).json(health);
+});
+```
+
+### Options
+
+```typescript
+await tenants.healthCheck({
+  ping: true,              // Execute SELECT 1 to verify connection (default: true)
+  pingTimeoutMs: 5000,     // Timeout for ping query (default: 5000)
+  includeShared: true,     // Check shared database (default: true)
+  tenantIds: ['t1', 't2'], // Check specific tenants only (optional)
+});
+```
+
+### HealthCheckResult
+
+```typescript
+interface HealthCheckResult {
+  healthy: boolean;              // Overall health status
+  pools: PoolHealth[];           // Per-tenant pool health
+  sharedDb: PoolHealthStatus;    // 'ok' | 'degraded' | 'unhealthy'
+  sharedDbResponseTimeMs?: number;
+  totalPools: number;
+  degradedPools: number;
+  unhealthyPools: number;
+  timestamp: string;
+  durationMs: number;
+}
+
+interface PoolHealth {
+  tenantId: string;
+  schemaName: string;
+  status: 'ok' | 'degraded' | 'unhealthy';
+  totalConnections: number;
+  idleConnections: number;
+  waitingRequests: number;
+  responseTimeMs?: number;
+  error?: string;
+}
+```
+
+### Health Status
+
+| Status | Condition |
+|--------|-----------|
+| `ok` | Pool responding normally |
+| `degraded` | Requests waiting in queue or slow response |
+| `unhealthy` | Ping failed or timed out |
+
+## Metrics
+
+Collect metrics on demand with zero overhead. Data is returned in a format-agnostic structure that you can format for any monitoring system:
+
+```typescript
+const metrics = tenants.getMetrics();
+
+console.log(`Active pools: ${metrics.pools.total}/${metrics.pools.maxPools}`);
+```
+
+### MetricsResult
+
+```typescript
+interface MetricsResult {
+  pools: {
+    total: number;
+    maxPools: number;
+    tenants: TenantPoolMetrics[];
+  };
+  shared: {
+    initialized: boolean;
+    connections: ConnectionMetrics | null;
+  };
+  timestamp: string;
+}
+
+interface TenantPoolMetrics {
+  tenantId: string;
+  schemaName: string;
+  connections: ConnectionMetrics;
+  lastAccessedAt: string;
+}
+
+interface ConnectionMetrics {
+  total: number;
+  idle: number;
+  waiting: number;
+}
+```
+
+### Prometheus Integration
+
+```typescript
+import { Gauge, register } from 'prom-client';
+
+const poolGauge = new Gauge({
+  name: 'drizzle_pool_count',
+  help: 'Number of active tenant pools',
+});
+
+const connectionsGauge = new Gauge({
+  name: 'drizzle_connections',
+  help: 'Connection metrics by tenant',
+  labelNames: ['tenant', 'state'],
+});
+
+app.get('/metrics', async (req, res) => {
+  const metrics = tenants.getMetrics();
+
+  poolGauge.set(metrics.pools.total);
+
+  for (const pool of metrics.pools.tenants) {
+    connectionsGauge.labels(pool.tenantId, 'total').set(pool.connections.total);
+    connectionsGauge.labels(pool.tenantId, 'idle').set(pool.connections.idle);
+    connectionsGauge.labels(pool.tenantId, 'waiting').set(pool.connections.waiting);
+  }
+
+  res.set('Content-Type', 'text/plain');
+  res.send(await register.metrics());
+});
+```
+
+### Datadog / Custom APM
+
+```typescript
+import { StatsD } from 'hot-shots';
+
+const statsd = new StatsD();
+
+setInterval(() => {
+  const metrics = tenants.getMetrics();
+
+  statsd.gauge('drizzle.pools.total', metrics.pools.total);
+
+  for (const pool of metrics.pools.tenants) {
+    statsd.gauge('drizzle.connections.idle', pool.connections.idle, { tenant: pool.tenantId });
+    statsd.gauge('drizzle.connections.waiting', pool.connections.waiting, { tenant: pool.tenantId });
+  }
+}, 10000);
+```
+
+### Combined Health + Metrics Endpoint
+
+```typescript
+app.get('/status', async (req, res) => {
+  const [health, metrics] = await Promise.all([
+    tenants.healthCheck(),
+    Promise.resolve(tenants.getMetrics()),
+  ]);
+
+  res.json({
+    status: health.healthy ? 'healthy' : 'unhealthy',
+    pools: {
+      total: metrics.pools.total,
+      max: metrics.pools.maxPools,
+      unhealthy: health.unhealthyPools,
+      degraded: health.degradedPools,
+    },
+    timestamp: metrics.timestamp,
+  });
+});
