@@ -485,7 +485,10 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
   - `seeder.ts` - Classe principal (301 linhas)
   - `types.ts` - Tipos internos (39 linhas)
   - `index.ts` - Exports públicos
-- [ ] `SyncManager` - Sincronização de divergências
+- [x] `SyncManager` extraído (36 testes, ~450 linhas)
+  - `sync-manager.ts` - Classe principal (~380 linhas)
+  - `types.ts` - Tipos internos (~55 linhas)
+  - `index.ts` - Exports públicos
 - [ ] `MigrationExecutor` e `BatchExecutor`
 
 ### Fase 3: PoolManager - PENDENTE
@@ -506,9 +509,10 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
 4. [x] Extrair `SchemaManager`
 5. [x] Extrair `DriftDetector`
 6. [x] Extrair `Seeder`
-7. [ ] Extrair `SyncManager`
-8. [ ] Code review por módulo
-9. [ ] Atualizar documentação
+7. [x] Extrair `SyncManager`
+8. [ ] Extrair `MigrationExecutor` e `BatchExecutor`
+9. [ ] Code review por módulo
+10. [ ] Atualizar documentação
 
 ---
 

@@ -3,6 +3,8 @@ export { SchemaManager, createSchemaManager } from './schema-manager.js';
 export type { CreateSchemaOptions, DropSchemaOptions } from './schema-manager.js';
 export { Seeder, createSeeder } from './seed/seeder.js';
 export type { SeederConfig, SeederDependencies } from './seed/types.js';
+export { SyncManager, createSyncManager } from './sync/sync-manager.js';
+export type { SyncManagerConfig, SyncManagerDependencies } from './sync/types.js';
 export { detectTableFormat, getFormatConfig, DEFAULT_FORMAT, DRIZZLE_KIT_FORMAT } from './table-format.js';
 export type { TableFormat, DetectedFormat } from './table-format.js';
 export type {
@@ -18,6 +20,12 @@ export type {
   CreateTenantOptions,
   DropTenantOptions,
   AppliedMigration,
+  // Sync types
+  TenantSyncStatus,
+  SyncStatus,
+  TenantSyncResult,
+  SyncResults,
+  SyncOptions,
   // Seeding types
   SeedFunction,
   SeedOptions,

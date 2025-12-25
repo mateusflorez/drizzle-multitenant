@@ -32,6 +32,7 @@ import { detectTableFormat, getFormatConfig, type DetectedFormat, type TableForm
 import { SchemaManager } from './schema-manager.js';
 import { DriftDetector } from './drift/drift-detector.js';
 import { Seeder } from './seed/seeder.js';
+import { SyncManager } from './sync/sync-manager.js';
 
 const DEFAULT_MIGRATIONS_TABLE = '__drizzle_migrations';
 
@@ -46,6 +47,7 @@ export class Migrator<
   private readonly schemaManager: SchemaManager<TTenantSchema, TSharedSchema>;
   private readonly driftDetector: DriftDetector<TTenantSchema, TSharedSchema>;
   private readonly seeder: Seeder<TTenantSchema>;
+  private readonly syncManager: SyncManager;
 
   constructor(
     private readonly tenantConfig: Config<TTenantSchema, TSharedSchema>,
@@ -63,6 +65,21 @@ export class Migrator<
         createPool: this.schemaManager.createPool.bind(this.schemaManager),
         schemaNameTemplate: tenantConfig.isolation.schemaNameTemplate,
         tenantSchema: tenantConfig.schemas.tenant as TTenantSchema,
+      }
+    );
+    this.syncManager = new SyncManager(
+      {
+        tenantDiscovery: migratorConfig.tenantDiscovery,
+        migrationsFolder: migratorConfig.migrationsFolder,
+        migrationsTable: this.migrationsTable,
+      },
+      {
+        createPool: this.schemaManager.createPool.bind(this.schemaManager),
+        schemaNameTemplate: tenantConfig.isolation.schemaNameTemplate,
+        migrationsTableExists: this.schemaManager.migrationsTableExists.bind(this.schemaManager),
+        ensureMigrationsTable: this.schemaManager.ensureMigrationsTable.bind(this.schemaManager),
+        getOrDetectFormat: this.getOrDetectFormat.bind(this),
+        loadMigrations: this.loadMigrations.bind(this),
       }
     );
   }
@@ -491,319 +508,51 @@ export class Migrator<
     return this.aggregateResults(results);
   }
 
+  // ============================================================================
+  // Sync Methods (delegated to SyncManager)
+  // ============================================================================
+
   /**
    * Get sync status for all tenants
    * Detects divergences between migrations on disk and tracking in database
    */
   async getSyncStatus(): Promise<SyncStatus> {
-    const tenantIds = await this.migratorConfig.tenantDiscovery();
-    const migrations = await this.loadMigrations();
-    const statuses: TenantSyncStatus[] = [];
-
-    for (const tenantId of tenantIds) {
-      statuses.push(await this.getTenantSyncStatus(tenantId, migrations));
-    }
-
-    return {
-      total: statuses.length,
-      inSync: statuses.filter((s) => s.inSync && !s.error).length,
-      outOfSync: statuses.filter((s) => !s.inSync && !s.error).length,
-      error: statuses.filter((s) => !!s.error).length,
-      details: statuses,
-    };
+    return this.syncManager.getSyncStatus();
   }
 
   /**
    * Get sync status for a specific tenant
    */
   async getTenantSyncStatus(tenantId: string, migrations?: MigrationFile[]): Promise<TenantSyncStatus> {
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-    const pool = await this.createPool(schemaName);
-
-    try {
-      const allMigrations = migrations ?? await this.loadMigrations();
-      const migrationNames = new Set(allMigrations.map((m) => m.name));
-      const migrationHashes = new Set(allMigrations.map((m) => m.hash));
-
-      // Check if migrations table exists
-      const tableExists = await this.migrationsTableExists(pool, schemaName);
-      if (!tableExists) {
-        return {
-          tenantId,
-          schemaName,
-          missing: allMigrations.map((m) => m.name),
-          orphans: [],
-          inSync: allMigrations.length === 0,
-          format: null,
-        };
-      }
-
-      // Detect the table format
-      const format = await this.getOrDetectFormat(pool, schemaName);
-      const applied = await this.getAppliedMigrations(pool, schemaName, format);
-
-      // Find missing migrations (in disk but not in database)
-      const appliedIdentifiers = new Set(applied.map((m) => m.identifier));
-      const missing = allMigrations
-        .filter((m) => !this.isMigrationApplied(m, appliedIdentifiers, format))
-        .map((m) => m.name);
-
-      // Find orphan records (in database but not in disk)
-      const orphans = applied
-        .filter((m) => {
-          if (format.columns.identifier === 'name') {
-            return !migrationNames.has(m.identifier);
-          }
-          // For hash-based formats, check both hash and name
-          return !migrationHashes.has(m.identifier) && !migrationNames.has(m.identifier);
-        })
-        .map((m) => m.identifier);
-
-      return {
-        tenantId,
-        schemaName,
-        missing,
-        orphans,
-        inSync: missing.length === 0 && orphans.length === 0,
-        format: format.format,
-      };
-    } catch (error) {
-      return {
-        tenantId,
-        schemaName,
-        missing: [],
-        orphans: [],
-        inSync: false,
-        format: null,
-        error: (error as Error).message,
-      };
-    } finally {
-      await pool.end();
-    }
+    return this.syncManager.getTenantSyncStatus(tenantId, migrations);
   }
 
   /**
    * Mark missing migrations as applied for a tenant
    */
   async markMissing(tenantId: string): Promise<TenantSyncResult> {
-    const startTime = Date.now();
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-    const markedMigrations: string[] = [];
-
-    const pool = await this.createPool(schemaName);
-
-    try {
-      const syncStatus = await this.getTenantSyncStatus(tenantId);
-
-      if (syncStatus.error) {
-        return {
-          tenantId,
-          schemaName,
-          success: false,
-          markedMigrations: [],
-          removedOrphans: [],
-          error: syncStatus.error,
-          durationMs: Date.now() - startTime,
-        };
-      }
-
-      if (syncStatus.missing.length === 0) {
-        return {
-          tenantId,
-          schemaName,
-          success: true,
-          markedMigrations: [],
-          removedOrphans: [],
-          durationMs: Date.now() - startTime,
-        };
-      }
-
-      const format = await this.getOrDetectFormat(pool, schemaName);
-      await this.ensureMigrationsTable(pool, schemaName, format);
-
-      const allMigrations = await this.loadMigrations();
-      const missingSet = new Set(syncStatus.missing);
-
-      for (const migration of allMigrations) {
-        if (missingSet.has(migration.name)) {
-          await this.recordMigration(pool, schemaName, migration, format);
-          markedMigrations.push(migration.name);
-        }
-      }
-
-      return {
-        tenantId,
-        schemaName,
-        success: true,
-        markedMigrations,
-        removedOrphans: [],
-        durationMs: Date.now() - startTime,
-      };
-    } catch (error) {
-      return {
-        tenantId,
-        schemaName,
-        success: false,
-        markedMigrations,
-        removedOrphans: [],
-        error: (error as Error).message,
-        durationMs: Date.now() - startTime,
-      };
-    } finally {
-      await pool.end();
-    }
+    return this.syncManager.markMissing(tenantId);
   }
 
   /**
    * Mark missing migrations as applied for all tenants
    */
   async markAllMissing(options: SyncOptions = {}): Promise<SyncResults> {
-    const { concurrency = 10, onProgress, onError } = options;
-
-    const tenantIds = await this.migratorConfig.tenantDiscovery();
-    const results: TenantSyncResult[] = [];
-    let aborted = false;
-
-    for (let i = 0; i < tenantIds.length && !aborted; i += concurrency) {
-      const batch = tenantIds.slice(i, i + concurrency);
-
-      const batchResults = await Promise.all(
-        batch.map(async (tenantId) => {
-          if (aborted) {
-            return this.createSkippedSyncResult(tenantId);
-          }
-
-          try {
-            onProgress?.(tenantId, 'starting');
-            const result = await this.markMissing(tenantId);
-            onProgress?.(tenantId, result.success ? 'completed' : 'failed');
-            return result;
-          } catch (error) {
-            onProgress?.(tenantId, 'failed');
-            const action = onError?.(tenantId, error as Error);
-            if (action === 'abort') {
-              aborted = true;
-            }
-            return this.createErrorSyncResult(tenantId, error as Error);
-          }
-        })
-      );
-
-      results.push(...batchResults);
-    }
-
-    return this.aggregateSyncResults(results);
+    return this.syncManager.markAllMissing(options);
   }
 
   /**
    * Remove orphan migration records for a tenant
    */
   async cleanOrphans(tenantId: string): Promise<TenantSyncResult> {
-    const startTime = Date.now();
-    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
-    const removedOrphans: string[] = [];
-
-    const pool = await this.createPool(schemaName);
-
-    try {
-      const syncStatus = await this.getTenantSyncStatus(tenantId);
-
-      if (syncStatus.error) {
-        return {
-          tenantId,
-          schemaName,
-          success: false,
-          markedMigrations: [],
-          removedOrphans: [],
-          error: syncStatus.error,
-          durationMs: Date.now() - startTime,
-        };
-      }
-
-      if (syncStatus.orphans.length === 0) {
-        return {
-          tenantId,
-          schemaName,
-          success: true,
-          markedMigrations: [],
-          removedOrphans: [],
-          durationMs: Date.now() - startTime,
-        };
-      }
-
-      const format = await this.getOrDetectFormat(pool, schemaName);
-      const identifierColumn = format.columns.identifier;
-
-      for (const orphan of syncStatus.orphans) {
-        await pool.query(
-          `DELETE FROM "${schemaName}"."${format.tableName}" WHERE "${identifierColumn}" = $1`,
-          [orphan]
-        );
-        removedOrphans.push(orphan);
-      }
-
-      return {
-        tenantId,
-        schemaName,
-        success: true,
-        markedMigrations: [],
-        removedOrphans,
-        durationMs: Date.now() - startTime,
-      };
-    } catch (error) {
-      return {
-        tenantId,
-        schemaName,
-        success: false,
-        markedMigrations: [],
-        removedOrphans,
-        error: (error as Error).message,
-        durationMs: Date.now() - startTime,
-      };
-    } finally {
-      await pool.end();
-    }
+    return this.syncManager.cleanOrphans(tenantId);
   }
 
   /**
    * Remove orphan migration records for all tenants
    */
   async cleanAllOrphans(options: SyncOptions = {}): Promise<SyncResults> {
-    const { concurrency = 10, onProgress, onError } = options;
-
-    const tenantIds = await this.migratorConfig.tenantDiscovery();
-    const results: TenantSyncResult[] = [];
-    let aborted = false;
-
-    for (let i = 0; i < tenantIds.length && !aborted; i += concurrency) {
-      const batch = tenantIds.slice(i, i + concurrency);
-
-      const batchResults = await Promise.all(
-        batch.map(async (tenantId) => {
-          if (aborted) {
-            return this.createSkippedSyncResult(tenantId);
-          }
-
-          try {
-            onProgress?.(tenantId, 'starting');
-            const result = await this.cleanOrphans(tenantId);
-            onProgress?.(tenantId, result.success ? 'completed' : 'failed');
-            return result;
-          } catch (error) {
-            onProgress?.(tenantId, 'failed');
-            const action = onError?.(tenantId, error as Error);
-            if (action === 'abort') {
-              aborted = true;
-            }
-            return this.createErrorSyncResult(tenantId, error as Error);
-          }
-        })
-      );
-
-      results.push(...batchResults);
-    }
-
-    return this.aggregateSyncResults(results);
+    return this.syncManager.cleanAllOrphans(options);
   }
 
   // ============================================================================
@@ -1098,48 +847,6 @@ export class Migrator<
       succeeded: results.filter((r) => r.success).length,
       failed: results.filter((r) => !r.success && r.error !== 'Skipped due to abort').length,
       skipped: results.filter((r) => r.error === 'Skipped due to abort').length,
-      details: results,
-    };
-  }
-
-  /**
-   * Create a skipped sync result
-   */
-  private createSkippedSyncResult(tenantId: string): TenantSyncResult {
-    return {
-      tenantId,
-      schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
-      success: false,
-      markedMigrations: [],
-      removedOrphans: [],
-      error: 'Skipped due to abort',
-      durationMs: 0,
-    };
-  }
-
-  /**
-   * Create an error sync result
-   */
-  private createErrorSyncResult(tenantId: string, error: Error): TenantSyncResult {
-    return {
-      tenantId,
-      schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
-      success: false,
-      markedMigrations: [],
-      removedOrphans: [],
-      error: error.message,
-      durationMs: 0,
-    };
-  }
-
-  /**
-   * Aggregate sync results
-   */
-  private aggregateSyncResults(results: TenantSyncResult[]): SyncResults {
-    return {
-      total: results.length,
-      succeeded: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
       details: results,
     };
   }
