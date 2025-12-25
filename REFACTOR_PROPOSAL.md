@@ -473,7 +473,7 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
 - [x] APIs públicas documentadas (`docs/API_CONTRACTS.md`)
 - [x] Interfaces definidas (`src/migrator/interfaces.ts`, `src/pool/interfaces.ts`)
 
-### Fase 2: Migrator - EM PROGRESSO
+### Fase 2: Migrator - CONCLUÍDA
 
 - [x] `SchemaManager` extraído (19 testes, 280 linhas)
 - [x] `DriftDetector` extraído (28 testes, ~450 linhas)
@@ -489,7 +489,11 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
   - `sync-manager.ts` - Classe principal (~380 linhas)
   - `types.ts` - Tipos internos (~55 linhas)
   - `index.ts` - Exports públicos
-- [ ] `MigrationExecutor` e `BatchExecutor`
+- [x] `MigrationExecutor` e `BatchExecutor` extraídos (67 testes, ~650 linhas)
+  - `migration-executor.ts` - Execução individual (~400 linhas)
+  - `batch-executor.ts` - Execução paralela (~250 linhas)
+  - `types.ts` - Tipos internos (~70 linhas)
+  - `index.ts` - Exports públicos
 
 ### Fase 3: PoolManager - PENDENTE
 
@@ -510,9 +514,10 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
 5. [x] Extrair `DriftDetector`
 6. [x] Extrair `Seeder`
 7. [x] Extrair `SyncManager`
-8. [ ] Extrair `MigrationExecutor` e `BatchExecutor`
+8. [x] Extrair `MigrationExecutor` e `BatchExecutor`
 9. [ ] Code review por módulo
 10. [ ] Atualizar documentação
+11. [ ] Iniciar Fase 3: PoolManager
 
 ---
 

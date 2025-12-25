@@ -5,6 +5,14 @@ export { Seeder, createSeeder } from './seed/seeder.js';
 export type { SeederConfig, SeederDependencies } from './seed/types.js';
 export { SyncManager, createSyncManager } from './sync/sync-manager.js';
 export type { SyncManagerConfig, SyncManagerDependencies } from './sync/types.js';
+export { MigrationExecutor, createMigrationExecutor, BatchExecutor, createBatchExecutor } from './executor/index.js';
+export type {
+  MigrationExecutorConfig,
+  MigrationExecutorDependencies,
+  MigrateTenantOptions,
+  BatchExecutorConfig,
+  BatchMigrateOptions,
+} from './executor/types.js';
 export { detectTableFormat, getFormatConfig, DEFAULT_FORMAT, DRIZZLE_KIT_FORMAT } from './table-format.js';
 export type { TableFormat, DetectedFormat } from './table-format.js';
 export type {
