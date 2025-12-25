@@ -207,6 +207,73 @@ export interface WarmupResult {
 }
 
 /**
+ * Health status for a pool
+ */
+export type PoolHealthStatus = 'ok' | 'degraded' | 'unhealthy';
+
+/**
+ * Health information for a single pool
+ */
+export interface PoolHealth {
+  /** Tenant ID */
+  tenantId: string;
+  /** Schema name */
+  schemaName: string;
+  /** Health status */
+  status: PoolHealthStatus;
+  /** Total connections in pool */
+  totalConnections: number;
+  /** Idle connections available */
+  idleConnections: number;
+  /** Waiting requests in queue */
+  waitingRequests: number;
+  /** Response time of health ping in ms */
+  responseTimeMs?: number;
+  /** Error message if unhealthy */
+  error?: string;
+}
+
+/**
+ * Options for health check
+ */
+export interface HealthCheckOptions {
+  /** Execute ping query to verify connection (default: true) */
+  ping?: boolean;
+  /** Timeout for ping query in ms (default: 5000) */
+  pingTimeoutMs?: number;
+  /** Include shared database in check (default: true) */
+  includeShared?: boolean;
+  /** Check specific tenant IDs only */
+  tenantIds?: string[];
+}
+
+/**
+ * Health check result
+ */
+export interface HealthCheckResult {
+  /** Overall health status */
+  healthy: boolean;
+  /** Health of tenant pools */
+  pools: PoolHealth[];
+  /** Health status of shared database */
+  sharedDb: PoolHealthStatus;
+  /** Response time of shared db ping in ms */
+  sharedDbResponseTimeMs?: number;
+  /** Error on shared db if any */
+  sharedDbError?: string;
+  /** Total active pools */
+  totalPools: number;
+  /** Pools with degraded status */
+  degradedPools: number;
+  /** Pools with unhealthy status */
+  unhealthyPools: number;
+  /** Timestamp of health check */
+  timestamp: string;
+  /** Total duration of health check in ms */
+  durationMs: number;
+}
+
+/**
  * Tenant manager interface
  */
 export interface TenantManager<
@@ -235,6 +302,8 @@ export interface TenantManager<
   evictPool(tenantId: string): Promise<void>;
   /** Pre-warm pools for specified tenants to reduce cold start latency */
   warmup(tenantIds: string[], options?: WarmupOptions): Promise<WarmupResult>;
+  /** Check health of all pools and connections */
+  healthCheck(options?: HealthCheckOptions): Promise<HealthCheckResult>;
   /** Dispose all pools and cleanup */
   dispose(): Promise<void>;
 }

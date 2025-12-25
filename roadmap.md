@@ -82,8 +82,8 @@ const db = await tenants.getDbAsync('tenant-123');
 const sharedDb = await tenants.getSharedDbAsync();
 ```
 
-#### Health Checks
-Verificar saúde dos pools e conexões.
+#### ~~Health Checks~~ (Concluído v1.1.0)
+~~Verificar saúde dos pools e conexões.~~
 
 ```typescript
 const manager = createTenantManager(config);
@@ -93,11 +93,16 @@ const health = await manager.healthCheck();
 // {
 //   healthy: true,
 //   pools: [
-//     { tenantId: 'abc', status: 'ok', connections: 5 },
-//     { tenantId: 'def', status: 'degraded', connections: 1 },
+//     { tenantId: 'abc', status: 'ok', totalConnections: 5, idleConnections: 3 },
+//     { tenantId: 'def', status: 'degraded', totalConnections: 5, waitingRequests: 2 },
 //   ],
 //   sharedDb: 'ok',
-//   timestamp: '2024-01-15T10:30:00Z'
+//   sharedDbResponseTimeMs: 12,
+//   totalPools: 2,
+//   degradedPools: 1,
+//   unhealthyPools: 0,
+//   timestamp: '2024-01-15T10:30:00Z',
+//   durationMs: 45
 // }
 
 // Endpoint para load balancers
@@ -105,42 +110,64 @@ app.get('/health', async (req, res) => {
   const health = await manager.healthCheck();
   res.status(health.healthy ? 200 : 503).json(health);
 });
+
+// Verificar tenants específicos
+const health = await manager.healthCheck({
+  tenantIds: ['tenant-1', 'tenant-2'],
+  ping: true,
+  pingTimeoutMs: 3000,
+  includeShared: true,
+});
 ```
 
-#### Métricas Prometheus
-Expor métricas no formato Prometheus para monitoramento.
+#### Métricas Agnósticas (Zero Deps)
+Expor métricas em formato agnóstico - usuário integra com Prometheus/Datadog/etc.
+
+> **Filosofia**: Zero dependências extras, zero overhead de tracking contínuo.
+> Dados coletados sob demanda via `getMetrics()`.
 
 ```typescript
-import { defineConfig } from 'drizzle-multitenant';
+// Coleta métricas sob demanda (zero overhead quando não chamado)
+const metrics = manager.getMetrics();
+// {
+//   pools: {
+//     total: 15,
+//     maxPools: 50,
+//     tenants: [
+//       { tenantId: 'abc', schemaName: 'tenant_abc', connections: { total: 10, idle: 7, waiting: 0 } },
+//       { tenantId: 'def', schemaName: 'tenant_def', connections: { total: 10, idle: 3, waiting: 2 } },
+//     ],
+//   },
+//   shared: { connections: { total: 10, idle: 8, waiting: 0 } },
+//   timestamp: '2024-01-15T10:30:00Z',
+// }
 
-export default defineConfig({
-  // ...
-  metrics: {
-    enabled: true,
-    prefix: 'drizzle_multitenant',
-  },
+// Usuário formata para Prometheus se quiser
+import { Gauge } from 'prom-client';
+
+const poolGauge = new Gauge({ name: 'drizzle_pool_count', help: 'Active pools' });
+const connectionsGauge = new Gauge({
+  name: 'drizzle_connections',
+  help: 'Connections by tenant',
+  labelNames: ['tenant', 'state']
 });
 
-// Endpoint para Prometheus
 app.get('/metrics', async (req, res) => {
   const metrics = manager.getMetrics();
+
+  poolGauge.set(metrics.pools.total);
+  for (const pool of metrics.pools.tenants) {
+    connectionsGauge.labels(pool.tenantId, 'idle').set(pool.connections.idle);
+    connectionsGauge.labels(pool.tenantId, 'active').set(pool.connections.total - pool.connections.idle);
+  }
+
   res.set('Content-Type', 'text/plain');
-  res.send(metrics);
+  res.send(await register.metrics());
 });
 ```
 
-Métricas expostas:
-```
-drizzle_multitenant_pool_count 15
-drizzle_multitenant_pool_connections_active{tenant="abc"} 3
-drizzle_multitenant_pool_connections_idle{tenant="abc"} 7
-drizzle_multitenant_query_duration_seconds_bucket{le="0.1"} 1024
-drizzle_multitenant_pool_evictions_total 42
-drizzle_multitenant_errors_total{type="connection"} 3
-```
-
-#### Structured Logging
-Integração com loggers populares (pino, winston).
+#### Hooks para Observabilidade
+Hooks existentes já suportam integração com qualquer logger/APM.
 
 ```typescript
 import pino from 'pino';
@@ -150,14 +177,14 @@ const logger = pino({ level: 'info' });
 export default defineConfig({
   // ...
   hooks: {
-    logger: {
-      provider: logger,
-      level: 'info',
-      // Logs estruturados automaticamente
-      // { tenant: 'abc', event: 'pool_created', duration: 45 }
-    },
     onPoolCreated: (tenantId) => {
-      logger.info({ tenant: tenantId }, 'Pool created');
+      logger.info({ tenant: tenantId, event: 'pool_created' }, 'Pool created');
+    },
+    onPoolEvicted: (tenantId) => {
+      logger.info({ tenant: tenantId, event: 'pool_evicted' }, 'Pool evicted');
+    },
+    onError: (tenantId, error) => {
+      logger.error({ tenant: tenantId, error: error.message }, 'Pool error');
     },
   },
 });
@@ -165,10 +192,9 @@ export default defineConfig({
 
 **Checklist v1.1.0:**
 - [x] Retry logic com backoff exponencial
-- [ ] `manager.healthCheck()` API
-- [ ] Métricas Prometheus
-- [ ] Integração com pino/winston
-- [x] Testes unitários e integração (retry: 20 testes)
+- [x] `manager.healthCheck()` API
+- [ ] `manager.getMetrics()` API (dados crus, zero deps)
+- [x] Testes unitários e integração (retry: 20 testes, healthCheck: 11 testes)
 
 ---
 
@@ -808,10 +834,10 @@ const stats = await adminQuery
 
 | Feature | Esforço | Versão | Status |
 |---------|---------|--------|--------|
-| Health check API | 2h | v1.1.0 | Pendente |
+| ~~Health check API~~ | 2h | v1.1.0 | **Concluído** |
+| `getMetrics()` API | 1h | v1.1.0 | Pendente |
 | Schema name sanitization | 1h | v1.2.0 | Pendente |
 | CLI interativo básico | 4h | v1.5.0 | Pendente |
-| Structured logging hook | 2h | v1.1.0 | Pendente |
 | Tenant clone (schema only) | 4h | v1.5.0 | Pendente |
 | ~~CLI migrationsTable config~~ | 1h | v1.0.3 | **Concluído** |
 | ~~TenantDbFactory para singletons~~ | 2h | v1.0.3 | **Concluído** |
