@@ -6,6 +6,9 @@ import type {
   PoolEntry,
   TenantDb,
   SharedDb,
+  WarmupOptions,
+  WarmupResult,
+  TenantWarmupResult,
 } from './types.js';
 import { DEFAULT_CONFIG as defaults } from './types.js';
 
@@ -109,6 +112,75 @@ export class PoolManager<
    */
   getActiveTenantIds(): string[] {
     return Array.from(this.tenantIdBySchema.values());
+  }
+
+  /**
+   * Pre-warm pools for specified tenants to reduce cold start latency
+   */
+  async warmup(tenantIds: string[], options: WarmupOptions = {}): Promise<WarmupResult> {
+    this.ensureNotDisposed();
+
+    const startTime = Date.now();
+    const { concurrency = 10, ping = true, onProgress } = options;
+    const results: TenantWarmupResult[] = [];
+
+    // Process in batches
+    for (let i = 0; i < tenantIds.length; i += concurrency) {
+      const batch = tenantIds.slice(i, i + concurrency);
+
+      const batchResults = await Promise.all(
+        batch.map(async (tenantId) => {
+          const tenantStart = Date.now();
+          onProgress?.(tenantId, 'starting');
+
+          try {
+            const alreadyWarm = this.hasPool(tenantId);
+
+            // Get or create pool
+            const db = this.getDb(tenantId);
+
+            // Execute ping query if requested
+            if (ping && !alreadyWarm) {
+              const schemaName = this.config.isolation.schemaNameTemplate(tenantId);
+              const entry = this.pools.get(schemaName);
+              if (entry) {
+                await entry.pool.query('SELECT 1');
+              }
+            }
+
+            onProgress?.(tenantId, 'completed');
+
+            return {
+              tenantId,
+              success: true,
+              alreadyWarm,
+              durationMs: Date.now() - tenantStart,
+            };
+          } catch (error) {
+            onProgress?.(tenantId, 'failed');
+
+            return {
+              tenantId,
+              success: false,
+              alreadyWarm: false,
+              durationMs: Date.now() - tenantStart,
+              error: (error as Error).message,
+            };
+          }
+        })
+      );
+
+      results.push(...batchResults);
+    }
+
+    return {
+      total: results.length,
+      succeeded: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success).length,
+      alreadyWarm: results.filter((r) => r.alreadyWarm).length,
+      durationMs: Date.now() - startTime,
+      details: results,
+    };
   }
 
   /**

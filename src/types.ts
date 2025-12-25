@@ -111,6 +111,42 @@ export type SharedDb<TSchema extends Record<string, unknown> = Record<string, un
   NodePgDatabase<TSchema>;
 
 /**
+ * Options for pool warmup
+ */
+export interface WarmupOptions {
+  /** Number of concurrent warmup operations */
+  concurrency?: number;
+  /** Execute a ping query to verify connection */
+  ping?: boolean;
+  /** Callback for progress updates */
+  onProgress?: (tenantId: string, status: 'starting' | 'completed' | 'failed') => void;
+}
+
+/**
+ * Result for a single tenant warmup
+ */
+export interface TenantWarmupResult {
+  tenantId: string;
+  success: boolean;
+  /** Whether the pool was already warm */
+  alreadyWarm: boolean;
+  durationMs: number;
+  error?: string;
+}
+
+/**
+ * Aggregate warmup results
+ */
+export interface WarmupResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  alreadyWarm: number;
+  durationMs: number;
+  details: TenantWarmupResult[];
+}
+
+/**
  * Tenant manager interface
  */
 export interface TenantManager<
@@ -131,6 +167,8 @@ export interface TenantManager<
   getActiveTenantIds(): string[];
   /** Manually evict a tenant pool */
   evictPool(tenantId: string): Promise<void>;
+  /** Pre-warm pools for specified tenants to reduce cold start latency */
+  warmup(tenantIds: string[], options?: WarmupOptions): Promise<WarmupResult>;
   /** Dispose all pools and cleanup */
   dispose(): Promise<void>;
 }

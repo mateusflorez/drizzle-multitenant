@@ -24,6 +24,9 @@ export type {
   TenantDb,
   SharedDb,
   PoolEntry,
+  WarmupOptions,
+  WarmupResult,
+  TenantWarmupResult,
 } from './types.js';
 
 export type {

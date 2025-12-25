@@ -433,6 +433,66 @@ const result = await query
   .leftJoin(subscriptionPlans, eq(orders.planId, subscriptionPlans.id));
 ```
 
+## Pool Warmup
+
+Pre-warm pools during application startup to eliminate cold start latency for your most active tenants:
+
+```typescript
+const tenants = createTenantManager(config);
+
+// Warmup specific tenants
+const result = await tenants.warmup(['tenant-1', 'tenant-2', 'tenant-3']);
+console.log(`Warmed ${result.succeeded} pools in ${result.durationMs}ms`);
+
+// Warmup with options
+await tenants.warmup(tenantIds, {
+  concurrency: 5,           // Parallel warmup (default: 10)
+  ping: true,               // Execute SELECT 1 to verify connection (default: true)
+  onProgress: (id, status) => console.log(`${id}: ${status}`),
+});
+
+// Warmup top tenants (e.g., by activity)
+const topTenants = await getTopTenantsByActivity(20);
+await tenants.warmup(topTenants);
+```
+
+### NestJS Integration
+
+```typescript
+import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
+import { InjectTenantManager } from 'drizzle-multitenant/nestjs';
+import type { TenantManager } from 'drizzle-multitenant';
+
+@Injectable()
+export class WarmupService implements OnApplicationBootstrap {
+  constructor(@InjectTenantManager() private manager: TenantManager) {}
+
+  async onApplicationBootstrap() {
+    const topTenants = await this.getTopTenants();
+    const result = await this.manager.warmup(topTenants);
+    console.log(`Warmed ${result.succeeded} pools, ${result.alreadyWarm} already warm`);
+  }
+
+  private async getTopTenants(): Promise<string[]> {
+    // Return your most active tenant IDs
+    return ['tenant-1', 'tenant-2', 'tenant-3'];
+  }
+}
+```
+
+### Warmup Result
+
+```typescript
+interface WarmupResult {
+  total: number;        // Total tenants processed
+  succeeded: number;    // Successfully warmed
+  failed: number;       // Failed to warm
+  alreadyWarm: number;  // Already had active pool
+  durationMs: number;   // Total duration
+  details: TenantWarmupResult[];
+}
+```
+
 ## API Reference
 
 ### Core
@@ -451,7 +511,10 @@ const result = await query
 | `getSharedDb()` | Get Drizzle instance for shared schema |
 | `getSchemaName(tenantId)` | Get schema name for tenant |
 | `hasPool(tenantId)` | Check if pool exists |
+| `getPoolCount()` | Get count of active pools |
+| `getActiveTenantIds()` | Get list of active tenant IDs |
 | `evictPool(tenantId)` | Force evict a pool |
+| `warmup(tenantIds, options?)` | Pre-warm pools to reduce cold start |
 | `dispose()` | Cleanup all pools |
 
 ### NestJS Decorators
