@@ -23,6 +23,19 @@ import type {
   SeedOptions,
   TenantSeedResult,
   SeedResults,
+  // Schema drift detection types
+  ColumnInfo,
+  IndexInfo,
+  ConstraintInfo,
+  TableSchema,
+  TenantSchema,
+  ColumnDrift,
+  IndexDrift,
+  ConstraintDrift,
+  TableDrift,
+  TenantSchemaDrift,
+  SchemaDriftStatus,
+  SchemaDriftOptions,
 } from './types.js';
 import { detectTableFormat, getFormatConfig, type DetectedFormat, type TableFormat } from './table-format.js';
 
@@ -1317,6 +1330,744 @@ export class Migrator<
       skipped: results.filter((r) => r.error === 'Skipped due to abort').length,
       details: results,
     };
+  }
+
+  // ============================================================================
+  // Schema Drift Detection Methods
+  // ============================================================================
+
+  /**
+   * Detect schema drift across all tenants
+   * Compares each tenant's schema against a reference tenant (first tenant by default)
+   *
+   * @example
+   * ```typescript
+   * const drift = await migrator.getSchemaDrift();
+   * if (drift.withDrift > 0) {
+   *   console.log('Schema drift detected!');
+   *   for (const tenant of drift.details) {
+   *     if (tenant.hasDrift) {
+   *       console.log(`Tenant ${tenant.tenantId} has drift:`);
+   *       for (const table of tenant.tables) {
+   *         for (const col of table.columns) {
+   *           console.log(`  - ${table.table}.${col.column}: ${col.description}`);
+   *         }
+   *       }
+   *     }
+   *   }
+   * }
+   * ```
+   */
+  async getSchemaDrift(options: SchemaDriftOptions = {}): Promise<SchemaDriftStatus> {
+    const startTime = Date.now();
+    const {
+      concurrency = 10,
+      includeIndexes = true,
+      includeConstraints = true,
+      excludeTables = [this.migrationsTable],
+      onProgress,
+    } = options;
+
+    // Get tenant IDs to check
+    const tenantIds = options.tenantIds ?? await this.migratorConfig.tenantDiscovery();
+
+    if (tenantIds.length === 0) {
+      return {
+        referenceTenant: '',
+        total: 0,
+        noDrift: 0,
+        withDrift: 0,
+        error: 0,
+        details: [],
+        timestamp: new Date().toISOString(),
+        durationMs: Date.now() - startTime,
+      };
+    }
+
+    // Determine reference tenant
+    const referenceTenant = options.referenceTenant ?? tenantIds[0]!;
+
+    // Get reference schema
+    onProgress?.(referenceTenant, 'starting');
+    onProgress?.(referenceTenant, 'introspecting');
+    const referenceSchema = await this.introspectTenantSchema(referenceTenant, {
+      includeIndexes,
+      includeConstraints,
+      excludeTables,
+    });
+
+    if (!referenceSchema) {
+      return {
+        referenceTenant,
+        total: tenantIds.length,
+        noDrift: 0,
+        withDrift: 0,
+        error: tenantIds.length,
+        details: tenantIds.map((id) => ({
+          tenantId: id,
+          schemaName: this.tenantConfig.isolation.schemaNameTemplate(id),
+          hasDrift: false,
+          tables: [],
+          issueCount: 0,
+          error: id === referenceTenant ? 'Failed to introspect reference tenant' : 'Reference tenant introspection failed',
+        })),
+        timestamp: new Date().toISOString(),
+        durationMs: Date.now() - startTime,
+      };
+    }
+
+    onProgress?.(referenceTenant, 'completed');
+
+    // Filter out reference tenant from comparison
+    const tenantsToCheck = tenantIds.filter((id) => id !== referenceTenant);
+
+    // Compare each tenant against reference
+    const results: TenantSchemaDrift[] = [];
+
+    // Add reference tenant as "no drift" (it's the baseline)
+    results.push({
+      tenantId: referenceTenant,
+      schemaName: referenceSchema.schemaName,
+      hasDrift: false,
+      tables: [],
+      issueCount: 0,
+    });
+
+    // Process tenants in batches
+    for (let i = 0; i < tenantsToCheck.length; i += concurrency) {
+      const batch = tenantsToCheck.slice(i, i + concurrency);
+
+      const batchResults = await Promise.all(
+        batch.map(async (tenantId) => {
+          try {
+            onProgress?.(tenantId, 'starting');
+            onProgress?.(tenantId, 'introspecting');
+
+            const tenantSchema = await this.introspectTenantSchema(tenantId, {
+              includeIndexes,
+              includeConstraints,
+              excludeTables,
+            });
+
+            if (!tenantSchema) {
+              onProgress?.(tenantId, 'failed');
+              return {
+                tenantId,
+                schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
+                hasDrift: false,
+                tables: [],
+                issueCount: 0,
+                error: 'Failed to introspect schema',
+              };
+            }
+
+            onProgress?.(tenantId, 'comparing');
+
+            const drift = this.compareSchemas(referenceSchema, tenantSchema, {
+              includeIndexes,
+              includeConstraints,
+            });
+
+            onProgress?.(tenantId, 'completed');
+
+            return drift;
+          } catch (error) {
+            onProgress?.(tenantId, 'failed');
+            return {
+              tenantId,
+              schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
+              hasDrift: false,
+              tables: [],
+              issueCount: 0,
+              error: (error as Error).message,
+            };
+          }
+        })
+      );
+
+      results.push(...batchResults);
+    }
+
+    return {
+      referenceTenant,
+      total: results.length,
+      noDrift: results.filter((r) => !r.hasDrift && !r.error).length,
+      withDrift: results.filter((r) => r.hasDrift && !r.error).length,
+      error: results.filter((r) => !!r.error).length,
+      details: results,
+      timestamp: new Date().toISOString(),
+      durationMs: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Get schema drift for a specific tenant compared to a reference
+   */
+  async getTenantSchemaDrift(
+    tenantId: string,
+    referenceTenantId: string,
+    options: Pick<SchemaDriftOptions, 'includeIndexes' | 'includeConstraints' | 'excludeTables'> = {}
+  ): Promise<TenantSchemaDrift> {
+    const {
+      includeIndexes = true,
+      includeConstraints = true,
+      excludeTables = [this.migrationsTable],
+    } = options;
+
+    const referenceSchema = await this.introspectTenantSchema(referenceTenantId, {
+      includeIndexes,
+      includeConstraints,
+      excludeTables,
+    });
+
+    if (!referenceSchema) {
+      return {
+        tenantId,
+        schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
+        hasDrift: false,
+        tables: [],
+        issueCount: 0,
+        error: 'Failed to introspect reference tenant',
+      };
+    }
+
+    const tenantSchema = await this.introspectTenantSchema(tenantId, {
+      includeIndexes,
+      includeConstraints,
+      excludeTables,
+    });
+
+    if (!tenantSchema) {
+      return {
+        tenantId,
+        schemaName: this.tenantConfig.isolation.schemaNameTemplate(tenantId),
+        hasDrift: false,
+        tables: [],
+        issueCount: 0,
+        error: 'Failed to introspect tenant schema',
+      };
+    }
+
+    return this.compareSchemas(referenceSchema, tenantSchema, {
+      includeIndexes,
+      includeConstraints,
+    });
+  }
+
+  /**
+   * Introspect the schema of a tenant
+   */
+  async introspectTenantSchema(
+    tenantId: string,
+    options: { includeIndexes?: boolean; includeConstraints?: boolean; excludeTables?: string[] } = {}
+  ): Promise<TenantSchema | null> {
+    const schemaName = this.tenantConfig.isolation.schemaNameTemplate(tenantId);
+    const pool = await this.createPool(schemaName);
+
+    try {
+      const tables = await this.introspectTables(pool, schemaName, options);
+
+      return {
+        tenantId,
+        schemaName,
+        tables,
+        introspectedAt: new Date(),
+      };
+    } catch {
+      return null;
+    } finally {
+      await pool.end();
+    }
+  }
+
+  /**
+   * Introspect all tables in a schema
+   */
+  private async introspectTables(
+    pool: Pool,
+    schemaName: string,
+    options: { includeIndexes?: boolean; includeConstraints?: boolean; excludeTables?: string[] }
+  ): Promise<TableSchema[]> {
+    const { includeIndexes = true, includeConstraints = true, excludeTables = [] } = options;
+
+    // Get all tables in schema
+    const tablesResult = await pool.query<{ table_name: string }>(
+      `SELECT table_name
+       FROM information_schema.tables
+       WHERE table_schema = $1
+         AND table_type = 'BASE TABLE'
+       ORDER BY table_name`,
+      [schemaName]
+    );
+
+    const tables: TableSchema[] = [];
+
+    for (const row of tablesResult.rows) {
+      if (excludeTables.includes(row.table_name)) {
+        continue;
+      }
+
+      const columns = await this.introspectColumns(pool, schemaName, row.table_name);
+      const indexes = includeIndexes ? await this.introspectIndexes(pool, schemaName, row.table_name) : [];
+      const constraints = includeConstraints ? await this.introspectConstraints(pool, schemaName, row.table_name) : [];
+
+      tables.push({
+        name: row.table_name,
+        columns,
+        indexes,
+        constraints,
+      });
+    }
+
+    return tables;
+  }
+
+  /**
+   * Introspect columns for a table
+   */
+  private async introspectColumns(pool: Pool, schemaName: string, tableName: string): Promise<ColumnInfo[]> {
+    const result = await pool.query<{
+      column_name: string;
+      data_type: string;
+      udt_name: string;
+      is_nullable: string;
+      column_default: string | null;
+      character_maximum_length: number | null;
+      numeric_precision: number | null;
+      numeric_scale: number | null;
+      ordinal_position: number;
+    }>(
+      `SELECT
+        column_name,
+        data_type,
+        udt_name,
+        is_nullable,
+        column_default,
+        character_maximum_length,
+        numeric_precision,
+        numeric_scale,
+        ordinal_position
+       FROM information_schema.columns
+       WHERE table_schema = $1 AND table_name = $2
+       ORDER BY ordinal_position`,
+      [schemaName, tableName]
+    );
+
+    return result.rows.map((row) => ({
+      name: row.column_name,
+      dataType: row.data_type,
+      udtName: row.udt_name,
+      isNullable: row.is_nullable === 'YES',
+      columnDefault: row.column_default,
+      characterMaximumLength: row.character_maximum_length,
+      numericPrecision: row.numeric_precision,
+      numericScale: row.numeric_scale,
+      ordinalPosition: row.ordinal_position,
+    }));
+  }
+
+  /**
+   * Introspect indexes for a table
+   */
+  private async introspectIndexes(pool: Pool, schemaName: string, tableName: string): Promise<IndexInfo[]> {
+    const result = await pool.query<{
+      indexname: string;
+      indexdef: string;
+    }>(
+      `SELECT indexname, indexdef
+       FROM pg_indexes
+       WHERE schemaname = $1 AND tablename = $2
+       ORDER BY indexname`,
+      [schemaName, tableName]
+    );
+
+    // Get index columns from pg_index
+    const indexDetails = await pool.query<{
+      indexname: string;
+      column_name: string;
+      is_unique: boolean;
+      is_primary: boolean;
+    }>(
+      `SELECT
+        i.relname as indexname,
+        a.attname as column_name,
+        ix.indisunique as is_unique,
+        ix.indisprimary as is_primary
+       FROM pg_class t
+       JOIN pg_index ix ON t.oid = ix.indrelid
+       JOIN pg_class i ON i.oid = ix.indexrelid
+       JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+       JOIN pg_namespace n ON n.oid = t.relnamespace
+       WHERE n.nspname = $1 AND t.relname = $2
+       ORDER BY i.relname, a.attnum`,
+      [schemaName, tableName]
+    );
+
+    // Group columns by index
+    const indexColumnsMap = new Map<string, { columns: string[]; isUnique: boolean; isPrimary: boolean }>();
+    for (const row of indexDetails.rows) {
+      const existing = indexColumnsMap.get(row.indexname);
+      if (existing) {
+        existing.columns.push(row.column_name);
+      } else {
+        indexColumnsMap.set(row.indexname, {
+          columns: [row.column_name],
+          isUnique: row.is_unique,
+          isPrimary: row.is_primary,
+        });
+      }
+    }
+
+    return result.rows.map((row) => {
+      const details = indexColumnsMap.get(row.indexname);
+      return {
+        name: row.indexname,
+        columns: details?.columns ?? [],
+        isUnique: details?.isUnique ?? false,
+        isPrimary: details?.isPrimary ?? false,
+        definition: row.indexdef,
+      };
+    });
+  }
+
+  /**
+   * Introspect constraints for a table
+   */
+  private async introspectConstraints(pool: Pool, schemaName: string, tableName: string): Promise<ConstraintInfo[]> {
+    const result = await pool.query<{
+      constraint_name: string;
+      constraint_type: string;
+      column_name: string;
+      foreign_table_schema: string | null;
+      foreign_table_name: string | null;
+      foreign_column_name: string | null;
+      check_clause: string | null;
+    }>(
+      `SELECT
+        tc.constraint_name,
+        tc.constraint_type,
+        kcu.column_name,
+        ccu.table_schema as foreign_table_schema,
+        ccu.table_name as foreign_table_name,
+        ccu.column_name as foreign_column_name,
+        cc.check_clause
+       FROM information_schema.table_constraints tc
+       LEFT JOIN information_schema.key_column_usage kcu
+         ON tc.constraint_name = kcu.constraint_name
+         AND tc.table_schema = kcu.table_schema
+       LEFT JOIN information_schema.constraint_column_usage ccu
+         ON tc.constraint_name = ccu.constraint_name
+         AND tc.constraint_type = 'FOREIGN KEY'
+       LEFT JOIN information_schema.check_constraints cc
+         ON tc.constraint_name = cc.constraint_name
+         AND tc.constraint_type = 'CHECK'
+       WHERE tc.table_schema = $1 AND tc.table_name = $2
+       ORDER BY tc.constraint_name, kcu.ordinal_position`,
+      [schemaName, tableName]
+    );
+
+    // Group by constraint name
+    const constraintMap = new Map<string, ConstraintInfo>();
+    for (const row of result.rows) {
+      const existing = constraintMap.get(row.constraint_name);
+      if (existing) {
+        if (row.column_name && !existing.columns.includes(row.column_name)) {
+          existing.columns.push(row.column_name);
+        }
+        if (row.foreign_column_name && existing.foreignColumns && !existing.foreignColumns.includes(row.foreign_column_name)) {
+          existing.foreignColumns.push(row.foreign_column_name);
+        }
+      } else {
+        const constraint: ConstraintInfo = {
+          name: row.constraint_name,
+          type: row.constraint_type as ConstraintInfo['type'],
+          columns: row.column_name ? [row.column_name] : [],
+        };
+        if (row.foreign_table_name) {
+          constraint.foreignTable = row.foreign_table_name;
+        }
+        if (row.foreign_column_name) {
+          constraint.foreignColumns = [row.foreign_column_name];
+        }
+        if (row.check_clause) {
+          constraint.checkExpression = row.check_clause;
+        }
+        constraintMap.set(row.constraint_name, constraint);
+      }
+    }
+
+    return Array.from(constraintMap.values());
+  }
+
+  /**
+   * Compare two schemas and return drift details
+   */
+  private compareSchemas(
+    reference: TenantSchema,
+    target: TenantSchema,
+    options: { includeIndexes?: boolean; includeConstraints?: boolean }
+  ): TenantSchemaDrift {
+    const { includeIndexes = true, includeConstraints = true } = options;
+    const tableDrifts: TableDrift[] = [];
+    let totalIssues = 0;
+
+    const refTableMap = new Map(reference.tables.map((t) => [t.name, t]));
+    const targetTableMap = new Map(target.tables.map((t) => [t.name, t]));
+
+    // Check for missing and drifted tables
+    for (const refTable of reference.tables) {
+      const targetTable = targetTableMap.get(refTable.name);
+
+      if (!targetTable) {
+        // Table is missing in target
+        tableDrifts.push({
+          table: refTable.name,
+          status: 'missing',
+          columns: refTable.columns.map((c) => ({
+            column: c.name,
+            type: 'missing',
+            expected: c.dataType,
+            description: `Column "${c.name}" (${c.dataType}) is missing`,
+          })),
+          indexes: [],
+          constraints: [],
+        });
+        totalIssues += refTable.columns.length;
+        continue;
+      }
+
+      // Compare table structure
+      const columnDrifts = this.compareColumns(refTable.columns, targetTable.columns);
+      const indexDrifts = includeIndexes ? this.compareIndexes(refTable.indexes, targetTable.indexes) : [];
+      const constraintDrifts = includeConstraints ? this.compareConstraints(refTable.constraints, targetTable.constraints) : [];
+
+      const issues = columnDrifts.length + indexDrifts.length + constraintDrifts.length;
+      totalIssues += issues;
+
+      if (issues > 0) {
+        tableDrifts.push({
+          table: refTable.name,
+          status: 'drifted',
+          columns: columnDrifts,
+          indexes: indexDrifts,
+          constraints: constraintDrifts,
+        });
+      }
+    }
+
+    // Check for extra tables in target
+    for (const targetTable of target.tables) {
+      if (!refTableMap.has(targetTable.name)) {
+        tableDrifts.push({
+          table: targetTable.name,
+          status: 'extra',
+          columns: targetTable.columns.map((c) => ({
+            column: c.name,
+            type: 'extra',
+            actual: c.dataType,
+            description: `Extra column "${c.name}" (${c.dataType}) not in reference`,
+          })),
+          indexes: [],
+          constraints: [],
+        });
+        totalIssues += targetTable.columns.length;
+      }
+    }
+
+    return {
+      tenantId: target.tenantId,
+      schemaName: target.schemaName,
+      hasDrift: totalIssues > 0,
+      tables: tableDrifts,
+      issueCount: totalIssues,
+    };
+  }
+
+  /**
+   * Compare columns between reference and target
+   */
+  private compareColumns(reference: ColumnInfo[], target: ColumnInfo[]): ColumnDrift[] {
+    const drifts: ColumnDrift[] = [];
+    const refColMap = new Map(reference.map((c) => [c.name, c]));
+    const targetColMap = new Map(target.map((c) => [c.name, c]));
+
+    // Check for missing and drifted columns
+    for (const refCol of reference) {
+      const targetCol = targetColMap.get(refCol.name);
+
+      if (!targetCol) {
+        drifts.push({
+          column: refCol.name,
+          type: 'missing',
+          expected: refCol.dataType,
+          description: `Column "${refCol.name}" (${refCol.dataType}) is missing`,
+        });
+        continue;
+      }
+
+      // Compare data types (normalize by comparing udt_name)
+      if (refCol.udtName !== targetCol.udtName) {
+        drifts.push({
+          column: refCol.name,
+          type: 'type_mismatch',
+          expected: refCol.udtName,
+          actual: targetCol.udtName,
+          description: `Column "${refCol.name}" type mismatch: expected "${refCol.udtName}", got "${targetCol.udtName}"`,
+        });
+      }
+
+      // Compare nullable
+      if (refCol.isNullable !== targetCol.isNullable) {
+        drifts.push({
+          column: refCol.name,
+          type: 'nullable_mismatch',
+          expected: refCol.isNullable,
+          actual: targetCol.isNullable,
+          description: `Column "${refCol.name}" nullable mismatch: expected ${refCol.isNullable ? 'NULL' : 'NOT NULL'}, got ${targetCol.isNullable ? 'NULL' : 'NOT NULL'}`,
+        });
+      }
+
+      // Compare defaults (normalize by removing schema qualifiers)
+      const normalizedRefDefault = this.normalizeDefault(refCol.columnDefault);
+      const normalizedTargetDefault = this.normalizeDefault(targetCol.columnDefault);
+      if (normalizedRefDefault !== normalizedTargetDefault) {
+        drifts.push({
+          column: refCol.name,
+          type: 'default_mismatch',
+          expected: refCol.columnDefault,
+          actual: targetCol.columnDefault,
+          description: `Column "${refCol.name}" default mismatch: expected "${refCol.columnDefault ?? 'none'}", got "${targetCol.columnDefault ?? 'none'}"`,
+        });
+      }
+    }
+
+    // Check for extra columns
+    for (const targetCol of target) {
+      if (!refColMap.has(targetCol.name)) {
+        drifts.push({
+          column: targetCol.name,
+          type: 'extra',
+          actual: targetCol.dataType,
+          description: `Extra column "${targetCol.name}" (${targetCol.dataType}) not in reference`,
+        });
+      }
+    }
+
+    return drifts;
+  }
+
+  /**
+   * Normalize default value for comparison
+   */
+  private normalizeDefault(value: string | null): string | null {
+    if (value === null) return null;
+    // Remove schema qualifiers and normalize common patterns
+    return value
+      .replace(/^'(.+)'::.+$/, '$1') // '123'::integer -> 123
+      .replace(/^(.+)::.+$/, '$1')   // value::type -> value
+      .trim();
+  }
+
+  /**
+   * Compare indexes between reference and target
+   */
+  private compareIndexes(reference: IndexInfo[], target: IndexInfo[]): IndexDrift[] {
+    const drifts: IndexDrift[] = [];
+    const refIndexMap = new Map(reference.map((i) => [i.name, i]));
+    const targetIndexMap = new Map(target.map((i) => [i.name, i]));
+
+    // Check for missing indexes
+    for (const refIndex of reference) {
+      const targetIndex = targetIndexMap.get(refIndex.name);
+
+      if (!targetIndex) {
+        drifts.push({
+          index: refIndex.name,
+          type: 'missing',
+          expected: refIndex.definition,
+          description: `Index "${refIndex.name}" is missing`,
+        });
+        continue;
+      }
+
+      // Compare columns
+      const refCols = refIndex.columns.sort().join(',');
+      const targetCols = targetIndex.columns.sort().join(',');
+      if (refCols !== targetCols || refIndex.isUnique !== targetIndex.isUnique) {
+        drifts.push({
+          index: refIndex.name,
+          type: 'definition_mismatch',
+          expected: refIndex.definition,
+          actual: targetIndex.definition,
+          description: `Index "${refIndex.name}" definition differs`,
+        });
+      }
+    }
+
+    // Check for extra indexes
+    for (const targetIndex of target) {
+      if (!refIndexMap.has(targetIndex.name)) {
+        drifts.push({
+          index: targetIndex.name,
+          type: 'extra',
+          actual: targetIndex.definition,
+          description: `Extra index "${targetIndex.name}" not in reference`,
+        });
+      }
+    }
+
+    return drifts;
+  }
+
+  /**
+   * Compare constraints between reference and target
+   */
+  private compareConstraints(reference: ConstraintInfo[], target: ConstraintInfo[]): ConstraintDrift[] {
+    const drifts: ConstraintDrift[] = [];
+    const refConstraintMap = new Map(reference.map((c) => [c.name, c]));
+    const targetConstraintMap = new Map(target.map((c) => [c.name, c]));
+
+    // Check for missing constraints
+    for (const refConstraint of reference) {
+      const targetConstraint = targetConstraintMap.get(refConstraint.name);
+
+      if (!targetConstraint) {
+        drifts.push({
+          constraint: refConstraint.name,
+          type: 'missing',
+          expected: `${refConstraint.type} on (${refConstraint.columns.join(', ')})`,
+          description: `Constraint "${refConstraint.name}" (${refConstraint.type}) is missing`,
+        });
+        continue;
+      }
+
+      // Compare constraint details
+      const refCols = refConstraint.columns.sort().join(',');
+      const targetCols = targetConstraint.columns.sort().join(',');
+      if (refConstraint.type !== targetConstraint.type || refCols !== targetCols) {
+        drifts.push({
+          constraint: refConstraint.name,
+          type: 'definition_mismatch',
+          expected: `${refConstraint.type} on (${refConstraint.columns.join(', ')})`,
+          actual: `${targetConstraint.type} on (${targetConstraint.columns.join(', ')})`,
+          description: `Constraint "${refConstraint.name}" definition differs`,
+        });
+      }
+    }
+
+    // Check for extra constraints
+    for (const targetConstraint of target) {
+      if (!refConstraintMap.has(targetConstraint.name)) {
+        drifts.push({
+          constraint: targetConstraint.name,
+          type: 'extra',
+          actual: `${targetConstraint.type} on (${targetConstraint.columns.join(', ')})`,
+          description: `Extra constraint "${targetConstraint.name}" (${targetConstraint.type}) not in reference`,
+        });
+      }
+    }
+
+    return drifts;
   }
 }
 

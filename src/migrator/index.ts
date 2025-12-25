@@ -19,4 +19,17 @@ export type {
   SeedOptions,
   TenantSeedResult,
   SeedResults,
+  // Schema drift detection types
+  ColumnInfo,
+  IndexInfo,
+  ConstraintInfo,
+  TableSchema,
+  TenantSchema,
+  ColumnDrift,
+  IndexDrift,
+  ConstraintDrift,
+  TableDrift,
+  TenantSchemaDrift,
+  SchemaDriftStatus,
+  SchemaDriftOptions,
 } from './types.js';

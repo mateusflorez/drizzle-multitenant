@@ -5,6 +5,7 @@ import {
   migrateCommand,
   statusCommand,
   syncCommand,
+  diffCommand,
   generateCommand,
   tenantCreateCommand,
   tenantDropCommand,
@@ -73,6 +74,7 @@ Documentation:
 program.addCommand(migrateCommand);
 program.addCommand(statusCommand);
 program.addCommand(syncCommand);
+program.addCommand(diffCommand);
 program.addCommand(generateCommand);
 program.addCommand(tenantCreateCommand);
 program.addCommand(tenantDropCommand);

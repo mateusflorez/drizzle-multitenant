@@ -474,8 +474,8 @@ $ npx drizzle-multitenant
   [ ] tenant_ghi (up to date)
 ```
 
-#### Tenant Seeding
-Popular dados iniciais em tenants.
+#### ~~Tenant Seeding~~ (Concluído v1.2.0)
+~~Popular dados iniciais em tenants.~~
 
 ```typescript
 // seeds/initial.ts
@@ -499,32 +499,82 @@ export const seed: SeedFunction = async (db, tenantId) => {
 # CLI
 npx drizzle-multitenant seed --tenant=abc --file=./seeds/initial.ts
 npx drizzle-multitenant seed --all --file=./seeds/initial.ts
+npx drizzle-multitenant seed --tenants=tenant-1,tenant-2 --file=./seeds/initial.ts
 
 # Programático
 await migrator.seedTenant('abc', seed);
 await migrator.seedAll(seed, { concurrency: 10 });
+await migrator.seedTenants(['tenant-1', 'tenant-2'], seed);
 ```
 
-#### Schema Drift Detection
-Detectar divergências entre schema esperado e atual.
+#### ~~Schema Drift Detection~~ (Concluído v1.5.0)
+~~Detectar divergências entre schema esperado e atual.~~
 
 ```bash
-$ npx drizzle-multitenant diff --tenant=abc
+$ npx drizzle-multitenant diff
 
-Schema drift detected in tenant_abc:
+Schema Drift Status:
+  tenant-1: (ref) No drift
+  tenant-2: 3 issues detected
+  tenant-3: No drift
 
-  Missing columns:
-    - users.avatar_url (varchar)
-    - users.last_login (timestamp)
+Summary:
+  Total:      3
+  No Drift:   2
+  With Drift: 1
+  Duration:   245ms
 
-  Extra columns:
-    - users.legacy_field (will be removed)
+Drift Details:
 
-  Index differences:
-    - Missing: idx_users_email
-    - Extra: idx_legacy_lookup
+  tenant-2 (tenant_tenant-2):
+    ~ Table "users":
+      ✗ Column "avatar_url" (varchar) is missing
+      ✗ Column "last_login" (timestamp) is missing
+      + Extra column "legacy_field" (varchar) not in reference
 
-Run 'drizzle-multitenant migrate --tenant=abc' to fix.
+# Opções disponíveis
+$ npx drizzle-multitenant diff --help
+
+Options:
+  -c, --config <path>          Path to config file
+  -r, --reference <tenant>     Tenant ID to use as reference (default: first tenant)
+  -t, --tenant <tenant>        Check only this tenant against reference
+  --tenants <tenants>          Check only these tenants (comma-separated)
+  --concurrency <number>       Number of concurrent operations (default: "10")
+  --no-indexes                 Skip index comparison
+  --no-constraints             Skip constraint comparison
+  --exclude-tables <tables>    Tables to exclude from comparison (comma-separated)
+  --json                       Output as JSON
+
+# Exemplos de uso
+$ npx drizzle-multitenant diff --reference=production-tenant
+$ npx drizzle-multitenant diff --tenant=tenant-2 --reference=tenant-1
+$ npx drizzle-multitenant diff --no-indexes --no-constraints
+$ npx drizzle-multitenant diff --json | jq '.summary'
+```
+
+```typescript
+// Uso programático
+const migrator = createMigrator(config, migratorConfig);
+
+// Detectar drift em todos os tenants
+const drift = await migrator.getSchemaDrift();
+// {
+//   referenceTenant: 'tenant-1',
+//   total: 5,
+//   noDrift: 4,
+//   withDrift: 1,
+//   error: 0,
+//   details: [...],
+//   timestamp: '2024-01-15T10:30:00Z',
+//   durationMs: 245
+// }
+
+// Comparar tenant específico com referência
+const tenantDrift = await migrator.getTenantSchemaDrift('tenant-2', 'tenant-1');
+
+// Introspect schema de um tenant
+const schema = await migrator.introspectTenantSchema('tenant-1');
 ```
 
 #### Tenant Cloning
@@ -558,8 +608,10 @@ await migrator.cloneTenant('source', 'target', {
 
 **Checklist v1.5.0:**
 - [x] CLI interativo com inquirer
-- [ ] Tenant seeding API
-- [ ] Schema drift detection
+- [x] Tenant seeding API (`seedTenant`, `seedAll`, `seedTenants`)
+- [x] Seed CLI command (`drizzle-multitenant seed`)
+- [x] Seed no menu interativo
+- [x] Schema drift detection (`drizzle-multitenant diff`)
 - [ ] Tenant cloning com anonymization
 - [ ] Documentação interativa
 
@@ -841,6 +893,8 @@ const stats = await adminQuery
 | ~~`getMetrics()` API~~ | 1h | v1.1.0 | **Concluído** |
 | Schema name sanitization | 1h | v1.2.0 | Pendente |
 | ~~CLI interativo básico~~ | 4h | v1.2.0 | **Concluído** |
+| ~~Tenant seeding API~~ | 3h | v1.2.0 | **Concluído** |
+| ~~Schema drift detection~~ | 4h | v1.5.0 | **Concluído** |
 | Tenant clone (schema only) | 4h | v1.5.0 | Pendente |
 | ~~CLI migrationsTable config~~ | 1h | v1.0.3 | **Concluído** |
 | ~~TenantDbFactory para singletons~~ | 2h | v1.0.3 | **Concluído** |

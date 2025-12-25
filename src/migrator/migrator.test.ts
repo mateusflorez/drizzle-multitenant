@@ -652,4 +652,369 @@ describe('Migrator', () => {
       expect(results.succeeded).toBe(3);
     });
   });
+
+  describe('getSchemaDrift', () => {
+    it('should return empty results when no tenants exist', async () => {
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => [],
+      });
+
+      const drift = await migrator.getSchemaDrift();
+
+      expect(drift.total).toBe(0);
+      expect(drift.noDrift).toBe(0);
+      expect(drift.withDrift).toBe(0);
+      expect(drift.error).toBe(0);
+      expect(drift.details).toHaveLength(0);
+      expect(drift.referenceTenant).toBe('');
+    });
+
+    it('should use first tenant as reference by default', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2'],
+      });
+
+      const drift = await migrator.getSchemaDrift();
+
+      expect(drift.referenceTenant).toBe('tenant-1');
+    });
+
+    it('should allow specifying reference tenant', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2'],
+      });
+
+      const drift = await migrator.getSchemaDrift({
+        referenceTenant: 'tenant-2',
+      });
+
+      expect(drift.referenceTenant).toBe('tenant-2');
+    });
+
+    it('should call progress callback', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const progressCalls: string[] = [];
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2'],
+      });
+
+      await migrator.getSchemaDrift({
+        onProgress: (tenantId, status) => {
+          progressCalls.push(`${tenantId}:${status}`);
+        },
+      });
+
+      expect(progressCalls).toContain('tenant-1:starting');
+      expect(progressCalls).toContain('tenant-1:introspecting');
+      expect(progressCalls).toContain('tenant-1:completed');
+    });
+
+    it('should accept concurrency option', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2', 'tenant-3'],
+      });
+
+      const drift = await migrator.getSchemaDrift({ concurrency: 1 });
+
+      expect(drift.total).toBe(3);
+    });
+
+    it('should allow checking specific tenants', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2', 'tenant-3'],
+      });
+
+      const drift = await migrator.getSchemaDrift({
+        tenantIds: ['tenant-1', 'tenant-2'],
+      });
+
+      expect(drift.total).toBe(2);
+    });
+
+    it('should exclude specified tables', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const drift = await migrator.getSchemaDrift({
+        excludeTables: ['__drizzle_migrations', 'audit_logs'],
+      });
+
+      expect(drift.total).toBe(1);
+    });
+
+    it('should include timestamp and duration', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const drift = await migrator.getSchemaDrift();
+
+      expect(drift.timestamp).toBeDefined();
+      expect(drift.durationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should mark reference tenant as no drift', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2'],
+      });
+
+      const drift = await migrator.getSchemaDrift();
+
+      const refTenant = drift.details.find((d) => d.tenantId === drift.referenceTenant);
+      expect(refTenant?.hasDrift).toBe(false);
+      expect(refTenant?.issueCount).toBe(0);
+    });
+  });
+
+  describe('getTenantSchemaDrift', () => {
+    it('should compare two tenants', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2'],
+      });
+
+      const drift = await migrator.getTenantSchemaDrift('tenant-2', 'tenant-1');
+
+      expect(drift.tenantId).toBe('tenant-2');
+      expect(drift.schemaName).toBe('tenant_tenant-2');
+    });
+
+    it('should return error when reference tenant introspection fails', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockRejectedValue(new Error('Connection failed')),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2'],
+      });
+
+      const drift = await migrator.getTenantSchemaDrift('tenant-2', 'tenant-1');
+
+      expect(drift.error).toBe('Failed to introspect reference tenant');
+    });
+  });
+
+  describe('introspectTenantSchema', () => {
+    it('should return tenant schema information', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockResolvedValue({
+          rows: [{ table_name: 'users' }],
+          rowCount: 1,
+        }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const schema = await migrator.introspectTenantSchema('tenant-1');
+
+      expect(schema?.tenantId).toBe('tenant-1');
+      expect(schema?.schemaName).toBe('tenant_tenant-1');
+      expect(schema?.introspectedAt).toBeInstanceOf(Date);
+    });
+
+    it('should return null when introspection fails', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockRejectedValue(new Error('Connection failed')),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const schema = await migrator.introspectTenantSchema('tenant-1');
+
+      expect(schema).toBeNull();
+    });
+
+    it('should exclude specified tables', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      const queryMock = vi.fn()
+        .mockResolvedValueOnce({
+          rows: [
+            { table_name: 'users' },
+            { table_name: '__drizzle_migrations' },
+            { table_name: 'audit_logs' },
+          ],
+          rowCount: 3,
+        })
+        .mockResolvedValue({ rows: [], rowCount: 0 });
+
+      Pool.mockImplementation(() => ({
+        query: queryMock,
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      });
+
+      const schema = await migrator.introspectTenantSchema('tenant-1', {
+        excludeTables: ['__drizzle_migrations', 'audit_logs'],
+      });
+
+      expect(schema?.tables).toHaveLength(1);
+      expect(schema?.tables[0].name).toBe('users');
+    });
+  });
+
+  describe('schema comparison', () => {
+    it('should detect missing tables', async () => {
+      const Pool = (await import('pg')).Pool as unknown as ReturnType<typeof vi.fn>;
+
+      let callCount = 0;
+      Pool.mockImplementation(() => ({
+        query: vi.fn().mockImplementation(() => {
+          callCount++;
+          // Reference tenant has users table
+          if (callCount === 1) {
+            return Promise.resolve({ rows: [{ table_name: 'users' }], rowCount: 1 });
+          }
+          // Reference tenant columns
+          if (callCount === 2) {
+            return Promise.resolve({
+              rows: [{ column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null, character_maximum_length: null, numeric_precision: 32, numeric_scale: 0, ordinal_position: 1 }],
+              rowCount: 1,
+            });
+          }
+          // Target tenant has no tables
+          if (callCount > 4) {
+            return Promise.resolve({ rows: [], rowCount: 0 });
+          }
+          return Promise.resolve({ rows: [], rowCount: 0 });
+        }),
+        connect: vi.fn(),
+        end: vi.fn(),
+        on: vi.fn(),
+      }));
+
+      const migrator = createMigrator(mockConfig, {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1', 'tenant-2'],
+      });
+
+      const drift = await migrator.getSchemaDrift({
+        includeIndexes: false,
+        includeConstraints: false,
+      });
+
+      // Should have detected drift in tenant-2
+      const tenant2Drift = drift.details.find((d) => d.tenantId === 'tenant-2');
+      expect(tenant2Drift?.hasDrift).toBe(true);
+    });
+  });
 });

@@ -216,3 +216,75 @@ export interface SyncSummary {
   outOfSync: number;
   error: number;
 }
+
+/**
+ * Options for the diff command
+ */
+export interface DiffOptions extends GlobalOptions {
+  config?: string;
+  reference?: string;
+  tenant?: string;
+  tenants?: string;
+  concurrency?: string;
+  indexes?: boolean;
+  constraints?: boolean;
+  excludeTables?: string;
+}
+
+/**
+ * JSON output for the diff command
+ */
+export interface DiffJsonOutput {
+  referenceTenant: string;
+  tenants: DiffTenantInfo[];
+  summary: DiffSummary;
+}
+
+export interface DiffTenantInfo {
+  id: string;
+  schema: string;
+  hasDrift: boolean;
+  issueCount: number;
+  tables: DiffTableInfo[];
+  error?: string | undefined;
+}
+
+export interface DiffTableInfo {
+  name: string;
+  status: 'ok' | 'missing' | 'extra' | 'drifted';
+  columns: DiffColumnInfo[];
+  indexes: DiffIndexInfo[];
+  constraints: DiffConstraintInfo[];
+}
+
+export interface DiffColumnInfo {
+  column: string;
+  type: 'missing' | 'extra' | 'type_mismatch' | 'nullable_mismatch' | 'default_mismatch';
+  expected?: string | boolean | null;
+  actual?: string | boolean | null;
+  description: string;
+}
+
+export interface DiffIndexInfo {
+  index: string;
+  type: 'missing' | 'extra' | 'definition_mismatch';
+  expected?: string;
+  actual?: string;
+  description: string;
+}
+
+export interface DiffConstraintInfo {
+  constraint: string;
+  type: 'missing' | 'extra' | 'definition_mismatch';
+  expected?: string;
+  actual?: string;
+  description: string;
+}
+
+export interface DiffSummary {
+  total: number;
+  noDrift: number;
+  withDrift: number;
+  error: number;
+  durationMs: number;
+}
