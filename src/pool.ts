@@ -18,8 +18,8 @@ import type {
 } from './types.js';
 import { DEFAULT_CONFIG as defaults } from './types.js';
 import { createDebugLogger, DebugLogger } from './debug.js';
-import { withRetry, isRetryableError } from './retry.js';
 import { PoolCache } from './pool/cache/index.js';
+import { RetryHandler } from './pool/retry/index.js';
 
 /**
  * Pool manager that handles tenant database connections with LRU eviction
@@ -37,7 +37,7 @@ export class PoolManager<
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private disposed = false;
   private readonly debugLogger: DebugLogger;
-  private readonly retryConfig: Required<RetryConfig>;
+  private readonly retryHandler: RetryHandler;
 
   constructor(private readonly config: Config<TTenantSchema, TSharedSchema>) {
     const maxPools = config.isolation.maxPools ?? defaults.maxPools;
@@ -45,17 +45,8 @@ export class PoolManager<
 
     this.debugLogger = createDebugLogger(config.debug);
 
-    // Initialize retry config with defaults
-    const userRetry = config.connection.retry ?? {};
-    this.retryConfig = {
-      maxAttempts: userRetry.maxAttempts ?? defaults.retry.maxAttempts,
-      initialDelayMs: userRetry.initialDelayMs ?? defaults.retry.initialDelayMs,
-      maxDelayMs: userRetry.maxDelayMs ?? defaults.retry.maxDelayMs,
-      backoffMultiplier: userRetry.backoffMultiplier ?? defaults.retry.backoffMultiplier,
-      jitter: userRetry.jitter ?? defaults.retry.jitter,
-      isRetryable: userRetry.isRetryable ?? isRetryableError,
-      onRetry: userRetry.onRetry,
-    };
+    // Initialize retry handler with config
+    this.retryHandler = new RetryHandler(config.connection.retry);
 
     this.poolCache = new PoolCache<TTenantSchema>({
       maxPools,
@@ -154,9 +145,10 @@ export class PoolManager<
     tenantId: string,
     schemaName: string
   ): Promise<PoolEntry<TTenantSchema>> {
-    const maxAttempts = this.retryConfig.maxAttempts;
+    const retryConfig = this.retryHandler.getConfig();
+    const maxAttempts = retryConfig.maxAttempts;
 
-    const result = await withRetry(
+    const result = await this.retryHandler.withRetry(
       async () => {
         // Create pool entry
         const entry = this.createPoolEntry(tenantId, schemaName);
@@ -176,13 +168,12 @@ export class PoolManager<
         }
       },
       {
-        ...this.retryConfig,
         onRetry: (attempt, error, delayMs) => {
           // Log retry event
           this.debugLogger.logConnectionRetry(tenantId, attempt, maxAttempts, error, delayMs);
 
           // Call user-provided onRetry hook
-          this.retryConfig.onRetry?.(attempt, error, delayMs);
+          retryConfig.onRetry?.(attempt, error, delayMs);
         },
       }
     );
@@ -260,9 +251,10 @@ export class PoolManager<
    * Connect to shared database with retry logic
    */
   private async connectSharedWithRetry(): Promise<SharedDb<TSharedSchema>> {
-    const maxAttempts = this.retryConfig.maxAttempts;
+    const retryConfig = this.retryHandler.getConfig();
+    const maxAttempts = retryConfig.maxAttempts;
 
-    const result = await withRetry(
+    const result = await this.retryHandler.withRetry(
       async () => {
         const pool = new Pool({
           connectionString: this.config.connection.url,
@@ -295,13 +287,12 @@ export class PoolManager<
         }
       },
       {
-        ...this.retryConfig,
         onRetry: (attempt, error, delayMs) => {
           // Log retry event
           this.debugLogger.logConnectionRetry('shared', attempt, maxAttempts, error, delayMs);
 
           // Call user-provided onRetry hook
-          this.retryConfig.onRetry?.(attempt, error, delayMs);
+          retryConfig.onRetry?.(attempt, error, delayMs);
         },
       }
     );
@@ -345,7 +336,7 @@ export class PoolManager<
    * Get the retry configuration
    */
   getRetryConfig(): Required<RetryConfig> {
-    return { ...this.retryConfig };
+    return this.retryHandler.getConfig();
   }
 
   /**

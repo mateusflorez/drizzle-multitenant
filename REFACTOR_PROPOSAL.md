@@ -500,7 +500,9 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
 - [x] `PoolCache` extraído (28 testes, ~180 linhas)
   - `pool-cache.ts` - Classe principal com LRU eviction
   - `index.ts` - Exports públicos
-- [ ] `RetryHandler` - Lógica de retry
+- [x] `RetryHandler` extraído (25 testes, ~200 linhas)
+  - `retry-handler.ts` - Classe com exponential backoff e jitter
+  - `index.ts` - Exports públicos
 - [ ] `HealthChecker` - Health checks
 
 ### Fase 4: CLI Menu - PENDENTE
@@ -521,7 +523,7 @@ import { HealthChecker } from 'drizzle-multitenant/pool/health';
 10. [ ] Atualizar documentação
 11. [x] Iniciar Fase 3: PoolManager
 12. [x] Extrair `PoolCache`
-13. [ ] Extrair `RetryHandler`
+13. [x] Extrair `RetryHandler`
 14. [ ] Extrair `HealthChecker`
 
 ---
