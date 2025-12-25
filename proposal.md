@@ -401,7 +401,7 @@ npx drizzle-multitenant import --from=./other-project/schemas.json
 - [x] Shared schema migrations ✅
 - [x] Shared schema seeding ✅
 - [x] Enhanced init wizard ✅
-- [ ] Doctor command
+- [x] Doctor command ✅
 
 ### Phase 2: Developer Experience (v1.4.0)
 - [ ] Scaffold command
@@ -438,7 +438,7 @@ src/
 │   │   ├── seed-all.ts              # ✅ IMPLEMENTADO
 │   │   ├── scaffold.ts              # PENDENTE
 │   │   ├── lint.ts                  # PENDENTE
-│   │   ├── doctor.ts                # PENDENTE
+│   │   ├── doctor.ts                # ✅ IMPLEMENTADO
 │   │   └── export.ts                # PENDENTE
 │   ├── init/                        # ✅ IMPLEMENTADO (enhanced wizard)
 │   │   ├── index.ts
@@ -514,6 +514,20 @@ src/
 ---
 
 ## Changelog
+
+### 2025-12-25 (Doctor Command)
+- ✅ Implementado comando `doctor` em `src/cli/commands/doctor.ts`
+- ✅ Verifica arquivo de configuração
+- ✅ Testa conexão com banco de dados PostgreSQL (versão e latência)
+- ✅ Verifica tenant discovery (quantidade de tenants)
+- ✅ Verifica pasta de migrations (tenant e shared)
+- ✅ Verifica configuração de schema isolation
+- ✅ Verifica configuração de pool (maxPools, poolTtlMs)
+- ✅ Gera recomendações baseadas nas verificações
+- ✅ Suporte a output JSON (--json flag)
+- ✅ Adicionados tipos `DoctorJsonOutput`, `DoctorCheck`, `DoctorRecommendation`
+- ✅ Adicionados 14 testes unitários
+- ✅ Todos os 122 testes da CLI passando
 
 ### 2025-12-25 (Enhanced Init Wizard)
 - ✅ Implementado wizard interativo melhorado em `src/cli/commands/init.ts`

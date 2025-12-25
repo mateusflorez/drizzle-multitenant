@@ -19,6 +19,7 @@ import {
   seedCommand,
   seedSharedCommand,
   seedAllCommand,
+  doctorCommand,
 } from './commands/index.js';
 import { initOutputContext } from './utils/output.js';
 import { mainMenu } from './ui/menu.js';
@@ -93,6 +94,7 @@ program.addCommand(interactiveCommand);
 program.addCommand(seedCommand);
 program.addCommand(seedSharedCommand);
 program.addCommand(seedAllCommand);
+program.addCommand(doctorCommand);
 
 // Default action: launch interactive mode when no command is specified
 program.action(async () => {

@@ -288,3 +288,42 @@ export interface DiffSummary {
   error: number;
   durationMs: number;
 }
+
+/**
+ * JSON output for the doctor command
+ */
+export interface DoctorJsonOutput {
+  healthy: boolean;
+  checks: DoctorCheck[];
+  recommendations: DoctorRecommendation[];
+  database?: {
+    version: string;
+    latencyMs: number;
+  };
+  tenantCount?: number;
+  poolConfig?: {
+    maxPools: number;
+    poolTtlMs: number;
+  };
+  durationMs: number;
+}
+
+export interface DoctorCheck {
+  name: string;
+  status: 'ok' | 'warn' | 'error';
+  message: string;
+  details?: string;
+}
+
+export interface DoctorRecommendation {
+  priority: 'high' | 'medium' | 'low';
+  message: string;
+  action?: string;
+}
+
+/**
+ * Options for the doctor command
+ */
+export interface DoctorOptions extends GlobalOptions {
+  config?: string;
+}

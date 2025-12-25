@@ -15,3 +15,4 @@ export { interactiveCommand } from './interactive.js';
 export { seedCommand } from './seed.js';
 export { seedSharedCommand } from './seed-shared.js';
 export { seedAllCommand } from './seed-all.js';
+export { doctorCommand } from './doctor.js';
