@@ -450,24 +450,27 @@ export default defineConfig({
 
 ### v1.5.0 - Developer Experience
 
-#### CLI Interativo
-Modo interativo para operações comuns.
+#### ~~CLI Interativo~~ (Concluído v1.2.0)
+~~Modo interativo para operações comuns.~~
 
 ```bash
 $ npx drizzle-multitenant
 
-? What do you want to do? (Use arrow keys)
-❯ Migrate all tenants
-  Check migration status
-  Create new tenant
-  Drop tenant
-  View pool statistics
-  Generate migration
+? drizzle-multitenant - Main Menu (Use arrow keys)
+❯ Migration Status (5 ok, 2 pending)
+  Migrate Tenants (3 pending)
+  ──────────────
+  Create Tenant
+  Drop Tenant
+  ──────────────
+  Generate Migration
+  Refresh
+  ──────────────
   Exit
 
 ? Select tenants to migrate:
   [x] tenant_abc (2 pending)
-  [x] tenant_def (2 pending)
+  [x] tenant_def (1 pending)
   [ ] tenant_ghi (up to date)
 ```
 
@@ -554,7 +557,7 @@ await migrator.cloneTenant('source', 'target', {
 ```
 
 **Checklist v1.5.0:**
-- [ ] CLI interativo com inquirer
+- [x] CLI interativo com inquirer
 - [ ] Tenant seeding API
 - [ ] Schema drift detection
 - [ ] Tenant cloning com anonymization
@@ -837,7 +840,7 @@ const stats = await adminQuery
 | ~~Health check API~~ | 2h | v1.1.0 | **Concluído** |
 | ~~`getMetrics()` API~~ | 1h | v1.1.0 | **Concluído** |
 | Schema name sanitization | 1h | v1.2.0 | Pendente |
-| CLI interativo básico | 4h | v1.5.0 | Pendente |
+| ~~CLI interativo básico~~ | 4h | v1.2.0 | **Concluído** |
 | Tenant clone (schema only) | 4h | v1.5.0 | Pendente |
 | ~~CLI migrationsTable config~~ | 1h | v1.0.3 | **Concluído** |
 | ~~TenantDbFactory para singletons~~ | 2h | v1.0.3 | **Concluído** |

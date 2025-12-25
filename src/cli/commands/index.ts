@@ -7,3 +7,4 @@ export { tenantDropCommand } from './tenant-drop.js';
 export { convertFormatCommand } from './convert-format.js';
 export { initCommand } from './init.js';
 export { completionCommand } from './completion.js';
+export { interactiveCommand } from './interactive.js';
