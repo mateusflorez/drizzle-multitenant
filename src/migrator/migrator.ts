@@ -617,13 +617,18 @@ export class Migrator<
 
   /**
    * Get or detect the format for the shared schema
+   *
+   * Uses sharedTableFormat/sharedDefaultFormat if configured,
+   * otherwise falls back to tableFormat/defaultFormat for backwards compatibility.
    */
   private async getOrDetectSharedFormat(
     pool: Pool,
     schemaName: string
   ): Promise<DetectedFormat> {
     const sharedMigrationsTable = this.migratorConfig.sharedMigrationsTable ?? DEFAULT_SHARED_MIGRATIONS_TABLE;
-    const configuredFormat = this.migratorConfig.tableFormat ?? 'auto';
+
+    // Use sharedTableFormat if specified, otherwise fall back to tableFormat for backwards compatibility
+    const configuredFormat = this.migratorConfig.sharedTableFormat ?? this.migratorConfig.tableFormat ?? 'auto';
 
     if (configuredFormat !== 'auto') {
       return getFormatConfig(configuredFormat, sharedMigrationsTable);
@@ -635,7 +640,8 @@ export class Migrator<
       return detected;
     }
 
-    const defaultFormat: TableFormat = this.migratorConfig.defaultFormat ?? 'name';
+    // Use sharedDefaultFormat if specified, otherwise fall back to defaultFormat
+    const defaultFormat: TableFormat = this.migratorConfig.sharedDefaultFormat ?? this.migratorConfig.defaultFormat ?? 'name';
     return getFormatConfig(defaultFormat, sharedMigrationsTable);
   }
 

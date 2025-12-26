@@ -58,6 +58,8 @@ export interface LoadedConfig {
   sharedMigrationsTable?: string;
   /** Table format for shared migrations detection */
   sharedTableFormat?: 'auto' | 'name' | 'hash' | 'drizzle-kit';
+  /** Default format when creating new shared migrations table */
+  sharedDefaultFormat?: 'name' | 'hash' | 'drizzle-kit';
   /** Drizzle-kit config if found */
   drizzleKitConfig?: DrizzleKitConfig | null;
 }
@@ -121,6 +123,7 @@ export async function loadConfig(configPath?: string): Promise<LoadedConfig> {
     drizzleKitConfig?.migrations?.table ??
     '__drizzle_migrations';
   const sharedTableFormat = exported.migrations?.sharedTableFormat ?? 'auto';
+  const sharedDefaultFormat = exported.migrations?.sharedDefaultFormat;
 
   return {
     config: exported,
@@ -130,6 +133,7 @@ export async function loadConfig(configPath?: string): Promise<LoadedConfig> {
     sharedMigrationsFolder,
     sharedMigrationsTable,
     sharedTableFormat,
+    sharedDefaultFormat,
     drizzleKitConfig,
   };
 }

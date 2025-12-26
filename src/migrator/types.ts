@@ -186,6 +186,21 @@ export interface MigratorConfig {
    * Hooks for shared schema migrations
    */
   sharedHooks?: SharedMigrationHooks;
+  /**
+   * Table format for tracking shared schema migrations
+   * Independent from tenant tableFormat, allowing different formats per schema type
+   * - "auto": Auto-detect existing format, use sharedDefaultFormat for new tables
+   * - "name": Use filename (drizzle-multitenant native)
+   * - "hash": Use SHA-256 hash
+   * - "drizzle-kit": Exact drizzle-kit format (hash + bigint timestamp)
+   * @default "auto"
+   */
+  sharedTableFormat?: 'auto' | TableFormat;
+  /**
+   * When using "auto" for sharedTableFormat and no table exists, which format to create
+   * @default "name"
+   */
+  sharedDefaultFormat?: TableFormat;
 }
 
 /**

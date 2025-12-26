@@ -329,8 +329,8 @@ Priority: `tenant.config.ts` > `drizzle.config.ts` > defaults
 
 - [x] Add `loadDrizzleKitConfig()` in `src/cli/utils/config.ts`
 - [x] Update `LoadedConfig` interface with shared schema fields
-- [ ] Add `sharedTableFormat` option to `MigratorConfig`
-- [ ] Update `getOrDetectSharedFormat()` to use `sharedTableFormat`
+- [x] Add `sharedTableFormat` option to `MigratorConfig`
+- [x] Update `getOrDetectSharedFormat()` to use `sharedTableFormat`
 - [ ] Update CLI menu to show drizzle.config.ts detection
 - [ ] Add tests for drizzle.config.ts loading
 - [ ] Add tests for shared table format auto-detection
