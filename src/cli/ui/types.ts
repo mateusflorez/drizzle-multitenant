@@ -2,6 +2,11 @@ import type { Config } from '../../types.js';
 import type { TenantMigrationStatus, SeedFunction } from '../../migrator/types.js';
 
 /**
+ * Source of shared schema configuration
+ */
+export type SharedConfigSource = 'drizzle.config.ts' | 'tenant.config.ts' | null;
+
+/**
  * Context shared across menu screens
  */
 export interface MenuContext {
@@ -11,6 +16,10 @@ export interface MenuContext {
   tenantDiscovery: () => Promise<string[]>;
   /** Path to shared migrations folder (optional) */
   sharedMigrationsFolder?: string | undefined;
+  /** Source of shared schema configuration */
+  sharedConfigSource?: SharedConfigSource;
+  /** Name of the drizzle.config file if detected */
+  drizzleKitConfigFile?: string | undefined;
 }
 
 /**

@@ -62,6 +62,10 @@ export interface LoadedConfig {
   sharedDefaultFormat?: 'name' | 'hash' | 'drizzle-kit';
   /** Drizzle-kit config if found */
   drizzleKitConfig?: DrizzleKitConfig | null;
+  /** Name of the drizzle-kit config file found (e.g., 'drizzle.config.ts') */
+  drizzleKitConfigFile?: string | null;
+  /** Source of shared folder configuration */
+  sharedConfigSource?: 'drizzle.config.ts' | 'tenant.config.ts' | null;
 }
 
 /**
@@ -113,14 +117,24 @@ export async function loadConfig(configPath?: string): Promise<LoadedConfig> {
   }
 
   // Load drizzle-kit config for shared schema settings (if exists)
-  const drizzleKitConfig = await loadDrizzleKitConfig();
+  const drizzleKitResult = await loadDrizzleKitConfig();
 
   // Priority: tenant.config.ts > drizzle.config.ts > defaults
-  const sharedMigrationsFolder =
-    exported.migrations?.sharedFolder ?? drizzleKitConfig?.out;
+  // Track the source of the shared folder configuration
+  let sharedMigrationsFolder: string | undefined;
+  let sharedConfigSource: 'drizzle.config.ts' | 'tenant.config.ts' | null = null;
+
+  if (exported.migrations?.sharedFolder) {
+    sharedMigrationsFolder = exported.migrations.sharedFolder;
+    sharedConfigSource = 'tenant.config.ts';
+  } else if (drizzleKitResult?.config.out) {
+    sharedMigrationsFolder = drizzleKitResult.config.out;
+    sharedConfigSource = 'drizzle.config.ts';
+  }
+
   const sharedMigrationsTable =
     exported.migrations?.sharedTable ??
-    drizzleKitConfig?.migrations?.table ??
+    drizzleKitResult?.config.migrations?.table ??
     '__drizzle_migrations';
   const sharedTableFormat = exported.migrations?.sharedTableFormat ?? 'auto';
   const sharedDefaultFormat = exported.migrations?.sharedDefaultFormat;
@@ -134,7 +148,9 @@ export async function loadConfig(configPath?: string): Promise<LoadedConfig> {
     sharedMigrationsTable,
     sharedTableFormat,
     sharedDefaultFormat,
-    drizzleKitConfig,
+    drizzleKitConfig: drizzleKitResult?.config ?? null,
+    drizzleKitConfigFile: drizzleKitResult?.fileName ?? null,
+    sharedConfigSource,
   };
 }
 
@@ -158,6 +174,14 @@ async function registerTypeScript(): Promise<void> {
 }
 
 /**
+ * Result of loading drizzle-kit configuration
+ */
+export interface DrizzleKitConfigResult {
+  config: DrizzleKitConfig;
+  fileName: string;
+}
+
+/**
  * Load drizzle-kit configuration for shared schema settings
  *
  * Searches for drizzle.config.ts/js/mjs in the current working directory.
@@ -166,16 +190,17 @@ async function registerTypeScript(): Promise<void> {
  *
  * @example
  * ```typescript
- * const drizzleKitConfig = await loadDrizzleKitConfig();
- * if (drizzleKitConfig) {
- *   console.log('Shared migrations folder:', drizzleKitConfig.out);
- *   console.log('Migrations table:', drizzleKitConfig.migrations?.table);
+ * const result = await loadDrizzleKitConfig();
+ * if (result) {
+ *   console.log('Found:', result.fileName);
+ *   console.log('Shared migrations folder:', result.config.out);
+ *   console.log('Migrations table:', result.config.migrations?.table);
  * }
  * ```
  *
- * @returns DrizzleKitConfig if found, null otherwise
+ * @returns DrizzleKitConfigResult if found, null otherwise
  */
-export async function loadDrizzleKitConfig(): Promise<DrizzleKitConfig | null> {
+export async function loadDrizzleKitConfig(): Promise<DrizzleKitConfigResult | null> {
   const cwd = process.cwd();
 
   for (const name of DRIZZLE_KIT_CONFIG_NAMES) {
@@ -193,11 +218,14 @@ export async function loadDrizzleKitConfig(): Promise<DrizzleKitConfig | null> {
 
         // drizzle-kit uses defineConfig() which returns the config object directly
         return {
-          out: exported.out,
-          schema: exported.schema,
-          dialect: exported.dialect,
-          dbCredentials: exported.dbCredentials,
-          migrations: exported.migrations,
+          config: {
+            out: exported.out,
+            schema: exported.schema,
+            dialect: exported.dialect,
+            dbCredentials: exported.dbCredentials,
+            migrations: exported.migrations,
+          },
+          fileName: name,
         };
       } catch (error) {
         // Config file exists but failed to load - log warning and continue
