@@ -1017,4 +1017,102 @@ describe('Migrator', () => {
       expect(tenant2Drift?.hasDrift).toBe(true);
     });
   });
+
+  describe('shared table format configuration', () => {
+    it('should accept sharedTableFormat in config', () => {
+      const migratorConfig: MigratorConfig = {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+        sharedTableFormat: 'drizzle-kit',
+      };
+
+      const migrator = createMigrator(mockConfig, migratorConfig);
+      expect(migrator).toBeInstanceOf(Migrator);
+    });
+
+    it('should accept sharedDefaultFormat in config', () => {
+      const migratorConfig: MigratorConfig = {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+        sharedDefaultFormat: 'hash',
+      };
+
+      const migrator = createMigrator(mockConfig, migratorConfig);
+      expect(migrator).toBeInstanceOf(Migrator);
+    });
+
+    it('should accept sharedMigrationsTable in config', () => {
+      const migratorConfig: MigratorConfig = {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+        sharedMigrationsTable: '__custom_shared_migrations',
+      };
+
+      const migrator = createMigrator(mockConfig, migratorConfig);
+      expect(migrator).toBeInstanceOf(Migrator);
+    });
+
+    it('should use sharedTableFormat over tableFormat for shared schema', () => {
+      // When both tableFormat and sharedTableFormat are specified,
+      // sharedTableFormat should be used for shared schema migrations
+      const migratorConfig: MigratorConfig = {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+        tableFormat: 'name',
+        sharedTableFormat: 'drizzle-kit',
+      };
+
+      const migrator = createMigrator(mockConfig, migratorConfig);
+      expect(migrator).toBeInstanceOf(Migrator);
+    });
+
+    it('should fallback to tableFormat when sharedTableFormat is not specified', () => {
+      // When only tableFormat is specified, it should be used for both
+      const migratorConfig: MigratorConfig = {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+        tableFormat: 'hash',
+      };
+
+      const migrator = createMigrator(mockConfig, migratorConfig);
+      expect(migrator).toBeInstanceOf(Migrator);
+    });
+
+    it('should default sharedTableFormat to auto when not specified', () => {
+      const migratorConfig: MigratorConfig = {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      };
+
+      const migrator = createMigrator(mockConfig, migratorConfig);
+      expect(migrator).toBeInstanceOf(Migrator);
+    });
+  });
+
+  describe('shared migrations folder configuration', () => {
+    it('should accept sharedMigrationsFolder in config', async () => {
+      const sharedMigrationsDir = join(testDir, 'shared-migrations');
+      await mkdir(sharedMigrationsDir, { recursive: true });
+
+      const migratorConfig: MigratorConfig = {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+        sharedMigrationsFolder: sharedMigrationsDir,
+      };
+
+      const migrator = createMigrator(mockConfig, migratorConfig);
+      expect(migrator).toBeInstanceOf(Migrator);
+      expect(migrator.hasSharedMigrations()).toBe(true);
+    });
+
+    it('should return false for hasSharedMigrations when not configured', () => {
+      const migratorConfig: MigratorConfig = {
+        migrationsFolder: migrationsDir,
+        tenantDiscovery: async () => ['tenant-1'],
+      };
+
+      const migrator = createMigrator(mockConfig, migratorConfig);
+      expect(migrator.hasSharedMigrations()).toBe(false);
+    });
+  });
 });

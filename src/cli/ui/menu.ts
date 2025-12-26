@@ -320,8 +320,15 @@ export class MainMenu {
     const spinner = ora('Loading configuration...').start();
 
     try {
-      const { config, migrationsFolder, migrationsTable, tenantDiscovery, sharedMigrationsFolder } =
-        await loadConfig(this.configPath);
+      const {
+        config,
+        migrationsFolder,
+        migrationsTable,
+        tenantDiscovery,
+        sharedMigrationsFolder,
+        sharedConfigSource,
+        drizzleKitConfigFile,
+      } = await loadConfig(this.configPath);
 
       if (!tenantDiscovery) {
         spinner.fail('No tenant discovery function found in config');
@@ -348,12 +355,21 @@ export class MainMenu {
 
       spinner.succeed('Configuration loaded');
 
+      // Show shared schema detection info
+      if (sharedFolder && sharedConfigSource) {
+        console.log(chalk.dim(`  └─ Shared schema: ${sharedMigrationsFolder} ${chalk.cyan(`(from ${sharedConfigSource})`)}`));
+      } else if (drizzleKitConfigFile && !sharedMigrationsFolder) {
+        console.log(chalk.dim(`  └─ Found ${drizzleKitConfigFile} (no shared migrations folder configured)`));
+      }
+
       return {
         config,
         migrationsFolder: folder,
         migrationsTable,
         tenantDiscovery,
         sharedMigrationsFolder: sharedFolder,
+        sharedConfigSource: sharedConfigSource ?? undefined,
+        drizzleKitConfigFile: drizzleKitConfigFile ?? undefined,
       };
     } catch (error) {
       spinner.fail('Failed to load configuration');

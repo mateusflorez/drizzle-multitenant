@@ -107,9 +107,56 @@ export default defineConfig({
 
 ## Migration Options
 
+### Tenant Migration Options
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `tenantFolder` | `string` | Required | Path to tenant migrations |
 | `migrationsTable` | `string` | `__drizzle_migrations` | Tracking table name |
 | `tableFormat` | `'auto' \| 'name' \| 'hash' \| 'drizzle-kit'` | `'auto'` | Migration table format |
+| `defaultFormat` | `'name' \| 'hash' \| 'drizzle-kit'` | `'name'` | Default format when creating new table |
 | `tenantDiscovery` | `function` | Required | Function to discover tenant IDs |
+
+### Shared Schema Migration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `sharedFolder` | `string` | Auto-detected | Path to shared migrations (from `drizzle.config.ts` if not set) |
+| `sharedTable` | `string` | `__drizzle_migrations` | Shared migrations tracking table |
+| `sharedTableFormat` | `'auto' \| 'name' \| 'hash' \| 'drizzle-kit'` | `'auto'` | Shared schema table format |
+| `sharedDefaultFormat` | `'name' \| 'hash' \| 'drizzle-kit'` | `'name'` | Default format when creating new shared table |
+
+### drizzle.config.ts Auto-Detection
+
+If you have an existing `drizzle.config.ts` file, shared schema settings are automatically detected:
+
+```typescript
+// drizzle.config.ts
+export default defineConfig({
+  out: './drizzle',              // → sharedFolder
+  migrations: {
+    table: '__drizzle_migrations', // → sharedTable
+  },
+});
+```
+
+The CLI menu shows the detected source:
+
+```
+✔ Configuration loaded
+  └─ Shared schema: ./drizzle (from drizzle.config.ts)
+```
+
+**Priority**: `tenant.config.ts` > `drizzle.config.ts` > defaults
+
+### Table Format Detection
+
+When `tableFormat` or `sharedTableFormat` is set to `'auto'` (default), the format is detected from existing tables:
+
+| Format | Identifier Column | Timestamp Column | Timestamp Type |
+|--------|------------------|------------------|----------------|
+| `name` | `name` | `applied_at` | `timestamp` |
+| `hash` | `hash` | `created_at` | `timestamp` |
+| `drizzle-kit` | `hash` | `created_at` | `bigint` |
+
+If no table exists, the format specified in `defaultFormat` or `sharedDefaultFormat` is used.

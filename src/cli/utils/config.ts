@@ -12,6 +12,41 @@ const CONFIG_FILE_NAMES = [
   'drizzle-multitenant.config.mjs',
 ];
 
+const DRIZZLE_KIT_CONFIG_NAMES = [
+  'drizzle.config.ts',
+  'drizzle.config.js',
+  'drizzle.config.mjs',
+];
+
+/**
+ * Drizzle-kit configuration structure
+ * @see https://orm.drizzle.team/kit-docs/config-reference
+ */
+export interface DrizzleKitConfig {
+  /** Output folder for migrations */
+  out?: string;
+  /** Schema file path */
+  schema?: string;
+  /** Database dialect */
+  dialect?: string;
+  /** Database credentials */
+  dbCredentials?: {
+    url?: string;
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+    database?: string;
+  };
+  /** Migrations configuration */
+  migrations?: {
+    /** Custom migrations table name */
+    table?: string;
+    /** Schema where migrations table is stored */
+    schema?: string;
+  };
+}
+
 export interface LoadedConfig {
   config: Config<Record<string, unknown>, Record<string, unknown>>;
   migrationsFolder?: string;
@@ -21,6 +56,16 @@ export interface LoadedConfig {
   sharedMigrationsFolder?: string;
   /** Table name for tracking shared migrations */
   sharedMigrationsTable?: string;
+  /** Table format for shared migrations detection */
+  sharedTableFormat?: 'auto' | 'name' | 'hash' | 'drizzle-kit';
+  /** Default format when creating new shared migrations table */
+  sharedDefaultFormat?: 'name' | 'hash' | 'drizzle-kit';
+  /** Drizzle-kit config if found */
+  drizzleKitConfig?: DrizzleKitConfig | null;
+  /** Name of the drizzle-kit config file found (e.g., 'drizzle.config.ts') */
+  drizzleKitConfigFile?: string | null;
+  /** Source of shared folder configuration */
+  sharedConfigSource?: 'drizzle.config.ts' | 'tenant.config.ts' | null;
 }
 
 /**
@@ -71,13 +116,41 @@ export async function loadConfig(configPath?: string): Promise<LoadedConfig> {
     );
   }
 
+  // Load drizzle-kit config for shared schema settings (if exists)
+  const drizzleKitResult = await loadDrizzleKitConfig();
+
+  // Priority: tenant.config.ts > drizzle.config.ts > defaults
+  // Track the source of the shared folder configuration
+  let sharedMigrationsFolder: string | undefined;
+  let sharedConfigSource: 'drizzle.config.ts' | 'tenant.config.ts' | null = null;
+
+  if (exported.migrations?.sharedFolder) {
+    sharedMigrationsFolder = exported.migrations.sharedFolder;
+    sharedConfigSource = 'tenant.config.ts';
+  } else if (drizzleKitResult?.config.out) {
+    sharedMigrationsFolder = drizzleKitResult.config.out;
+    sharedConfigSource = 'drizzle.config.ts';
+  }
+
+  const sharedMigrationsTable =
+    exported.migrations?.sharedTable ??
+    drizzleKitResult?.config.migrations?.table ??
+    '__drizzle_migrations';
+  const sharedTableFormat = exported.migrations?.sharedTableFormat ?? 'auto';
+  const sharedDefaultFormat = exported.migrations?.sharedDefaultFormat;
+
   return {
     config: exported,
     migrationsFolder: exported.migrations?.tenantFolder ?? exported.migrations?.folder,
     migrationsTable: exported.migrations?.migrationsTable ?? exported.migrations?.table,
     tenantDiscovery: exported.migrations?.tenantDiscovery,
-    sharedMigrationsFolder: exported.migrations?.sharedFolder,
-    sharedMigrationsTable: exported.migrations?.sharedTable,
+    sharedMigrationsFolder,
+    sharedMigrationsTable,
+    sharedTableFormat,
+    sharedDefaultFormat,
+    drizzleKitConfig: drizzleKitResult?.config ?? null,
+    drizzleKitConfigFile: drizzleKitResult?.fileName ?? null,
+    sharedConfigSource,
   };
 }
 
@@ -98,6 +171,74 @@ async function registerTypeScript(): Promise<void> {
       );
     }
   }
+}
+
+/**
+ * Result of loading drizzle-kit configuration
+ */
+export interface DrizzleKitConfigResult {
+  config: DrizzleKitConfig;
+  fileName: string;
+}
+
+/**
+ * Load drizzle-kit configuration for shared schema settings
+ *
+ * Searches for drizzle.config.ts/js/mjs in the current working directory.
+ * If found, returns the parsed configuration which can be used to auto-detect
+ * shared migrations folder and table settings.
+ *
+ * @example
+ * ```typescript
+ * const result = await loadDrizzleKitConfig();
+ * if (result) {
+ *   console.log('Found:', result.fileName);
+ *   console.log('Shared migrations folder:', result.config.out);
+ *   console.log('Migrations table:', result.config.migrations?.table);
+ * }
+ * ```
+ *
+ * @returns DrizzleKitConfigResult if found, null otherwise
+ */
+export async function loadDrizzleKitConfig(): Promise<DrizzleKitConfigResult | null> {
+  const cwd = process.cwd();
+
+  for (const name of DRIZZLE_KIT_CONFIG_NAMES) {
+    const path = resolve(cwd, name);
+    if (existsSync(path)) {
+      const ext = extname(path);
+      if (ext === '.ts') {
+        await registerTypeScript();
+      }
+
+      try {
+        const configUrl = pathToFileURL(path).href;
+        const module = await import(configUrl);
+        const exported = module.default ?? module;
+
+        // drizzle-kit uses defineConfig() which returns the config object directly
+        return {
+          config: {
+            out: exported.out,
+            schema: exported.schema,
+            dialect: exported.dialect,
+            dbCredentials: exported.dbCredentials,
+            migrations: exported.migrations,
+          },
+          fileName: name,
+        };
+      } catch (error) {
+        // Config file exists but failed to load - log warning and continue
+        console.warn(
+          `Warning: Found ${name} but failed to load it:`,
+          error instanceof Error ? error.message : error
+        );
+        return null;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**

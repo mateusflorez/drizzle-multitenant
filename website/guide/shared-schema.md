@@ -28,6 +28,65 @@ drizzle/
 
 ## Configuration
 
+### Auto-Detection from drizzle.config.ts
+
+If you already have a `drizzle.config.ts` for drizzle-kit, **drizzle-multitenant** will automatically detect and use its settings for shared schema migrations:
+
+```typescript
+// drizzle.config.ts (your existing drizzle-kit config)
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  out: './drizzle',                    // ← Auto-detected as sharedFolder
+  schema: './src/db/schema/shared.ts',
+  dialect: 'postgresql',
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+  migrations: {
+    table: '__drizzle_migrations',     // ← Auto-detected as sharedTable
+    schema: 'public',
+  },
+});
+```
+
+```typescript
+// tenant.config.ts (simplified - no shared config needed!)
+import { defineConfig } from 'drizzle-multitenant';
+import * as tenantSchema from './src/db/schema/tenant';
+import * as sharedSchema from './src/db/schema/shared';
+
+export default defineConfig({
+  connection: {
+    url: process.env.DATABASE_URL!,
+  },
+  isolation: {
+    strategy: 'schema',
+    schemaNameTemplate: (id) => `tenant_${id}`,
+  },
+  schemas: {
+    tenant: tenantSchema,
+    shared: sharedSchema,
+  },
+  migrations: {
+    tenantFolder: './drizzle/tenant',
+    tenantDiscovery: async () => getTenantIds(),
+    // No shared config needed - auto-detected from drizzle.config.ts!
+  },
+});
+```
+
+When starting the interactive menu, you'll see the detection:
+
+```
+✔ Configuration loaded
+  └─ Shared schema: ./drizzle (from drizzle.config.ts)
+```
+
+### Manual Configuration
+
+If you prefer explicit configuration or need to override drizzle.config.ts settings:
+
 ```typescript
 // tenant.config.ts
 import { defineConfig } from 'drizzle-multitenant';
@@ -47,13 +106,30 @@ export default defineConfig({
     shared: sharedSchema,
   },
   migrations: {
-    folder: './drizzle/tenant-migrations',
-    sharedFolder: './drizzle/shared-migrations',  // Shared migrations
+    tenantFolder: './drizzle/tenant-migrations',
+    sharedFolder: './drizzle/shared-migrations',  // Explicit shared folder
     table: '__drizzle_migrations',
     sharedTable: '__drizzle_shared_migrations',   // Separate tracking table
+    sharedTableFormat: 'auto',                    // Auto-detect format
+    sharedDefaultFormat: 'name',                  // Default when creating new table
+    tenantDiscovery: async () => getTenantIds(),
   },
 });
 ```
+
+### Configuration Priority
+
+Settings are resolved in this order:
+
+1. **tenant.config.ts** (explicit configuration)
+2. **drizzle.config.ts** (auto-detected)
+3. **Defaults**
+
+| Setting | tenant.config.ts | drizzle.config.ts | Default |
+|---------|-----------------|-------------------|---------|
+| Shared folder | `sharedFolder` | `out` | - |
+| Shared table | `sharedTable` | `migrations.table` | `__drizzle_migrations` |
+| Table format | `sharedTableFormat` | - | `'auto'` |
 
 ## Shared Migrations
 
