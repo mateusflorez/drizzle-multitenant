@@ -244,6 +244,9 @@ export class MainMenu {
         migrationsFolder: this.ctx.migrationsFolder,
         sharedMigrationsFolder: this.ctx.sharedMigrationsFolder,
         ...(this.ctx.migrationsTable && { migrationsTable: this.ctx.migrationsTable }),
+        ...(this.ctx.sharedMigrationsTable && { sharedMigrationsTable: this.ctx.sharedMigrationsTable }),
+        ...(this.ctx.sharedTableFormat && this.ctx.sharedTableFormat !== 'auto' && { sharedTableFormat: this.ctx.sharedTableFormat }),
+        ...(this.ctx.sharedDefaultFormat && { sharedDefaultFormat: this.ctx.sharedDefaultFormat }),
         tenantDiscovery: this.ctx.tenantDiscovery,
       });
 
@@ -326,6 +329,9 @@ export class MainMenu {
         migrationsTable,
         tenantDiscovery,
         sharedMigrationsFolder,
+        sharedMigrationsTable,
+        sharedTableFormat,
+        sharedDefaultFormat,
         sharedConfigSource,
         drizzleKitConfigFile,
       } = await loadConfig(this.configPath);
@@ -368,6 +374,9 @@ export class MainMenu {
         migrationsTable,
         tenantDiscovery,
         sharedMigrationsFolder: sharedFolder,
+        sharedMigrationsTable,
+        sharedTableFormat,
+        sharedDefaultFormat,
         sharedConfigSource: sharedConfigSource ?? undefined,
         drizzleKitConfigFile: drizzleKitConfigFile ?? undefined,
       };
@@ -391,6 +400,9 @@ export class MainMenu {
         migrationsFolder: this.ctx.migrationsFolder,
         sharedMigrationsFolder: this.ctx.sharedMigrationsFolder,
         ...(this.ctx.migrationsTable && { migrationsTable: this.ctx.migrationsTable }),
+        ...(this.ctx.sharedMigrationsTable && { sharedMigrationsTable: this.ctx.sharedMigrationsTable }),
+        ...(this.ctx.sharedTableFormat && this.ctx.sharedTableFormat !== 'auto' && { sharedTableFormat: this.ctx.sharedTableFormat }),
+        ...(this.ctx.sharedDefaultFormat && { sharedDefaultFormat: this.ctx.sharedDefaultFormat }),
         tenantDiscovery: this.ctx.tenantDiscovery,
       });
 

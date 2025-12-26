@@ -16,6 +16,12 @@ export interface MenuContext {
   tenantDiscovery: () => Promise<string[]>;
   /** Path to shared migrations folder (optional) */
   sharedMigrationsFolder?: string | undefined;
+  /** Table name for shared migrations */
+  sharedMigrationsTable?: string | undefined;
+  /** Table format for shared migrations */
+  sharedTableFormat?: string | undefined;
+  /** Default format when creating new shared migrations table */
+  sharedDefaultFormat?: string | undefined;
   /** Source of shared schema configuration */
   sharedConfigSource?: SharedConfigSource;
   /** Name of the drizzle.config file if detected */
