@@ -332,8 +332,8 @@ Priority: `tenant.config.ts` > `drizzle.config.ts` > defaults
 - [x] Add `sharedTableFormat` option to `MigratorConfig`
 - [x] Update `getOrDetectSharedFormat()` to use `sharedTableFormat`
 - [x] Update CLI menu to show drizzle.config.ts detection
-- [ ] Add tests for drizzle.config.ts loading
-- [ ] Add tests for shared table format auto-detection
+- [x] Add tests for drizzle.config.ts loading
+- [x] Add tests for shared table format auto-detection
 - [ ] Update documentation
 
 ---
