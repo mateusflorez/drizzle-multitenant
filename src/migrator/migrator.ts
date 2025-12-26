@@ -158,7 +158,15 @@ export class Migrator<
         executorConfig,
         {
           createPool: this.schemaManager.createRootPool.bind(this.schemaManager),
-          migrationsTableExists: this.schemaManager.migrationsTableExists.bind(this.schemaManager),
+          // Use wrapper to check correct shared migrations table (not tenant migrations table)
+          migrationsTableExists: async (pool: Pool, schemaName: string) => {
+            const result = await pool.query(
+              `SELECT 1 FROM information_schema.tables
+               WHERE table_schema = $1 AND table_name = $2`,
+              [schemaName, sharedMigrationsTable]
+            );
+            return result.rowCount !== null && result.rowCount > 0;
+          },
           ensureMigrationsTable: this.schemaManager.ensureMigrationsTable.bind(this.schemaManager),
           getOrDetectFormat: this.getOrDetectSharedFormat.bind(this),
           loadMigrations: this.loadSharedMigrations.bind(this),
