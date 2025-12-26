@@ -57,7 +57,15 @@ Examples:
       spinner.start();
 
       const loadedConfig = await loadConfig(options.config);
-      const { config, sharedMigrationsFolder, migrationsTable, tenantDiscovery } = loadedConfig;
+      const {
+        config,
+        sharedMigrationsFolder,
+        migrationsTable,
+        tenantDiscovery,
+        sharedMigrationsTable,
+        sharedTableFormat,
+        sharedDefaultFormat,
+      } = loadedConfig;
 
       // Determine shared migrations folder
       const folder = options.migrationsFolder
@@ -83,6 +91,9 @@ Examples:
         migrationsFolder: loadedConfig.migrationsFolder ?? './drizzle/tenant-migrations',
         sharedMigrationsFolder: folder,
         ...(migrationsTable && { migrationsTable }),
+        ...(sharedMigrationsTable && { sharedMigrationsTable }),
+        ...(sharedTableFormat && sharedTableFormat !== 'auto' && { sharedTableFormat }),
+        ...(sharedDefaultFormat && { sharedDefaultFormat }),
         tenantDiscovery: tenantDiscovery ?? (async () => []),
       });
 
